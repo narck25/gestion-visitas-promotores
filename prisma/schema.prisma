@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [postgis(version: "3.3.2")]
+}
+
+// ==================== USUARIOS ====================
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique @db.VarChar(255)
+  password      String    @db.VarChar(255)
+  name          String    @db.VarChar(255)
+  phone         String?   @db.VarChar(20)
+  avatar        String?   @db.VarChar(500) // URL de imagen de perfil
+  role          Role      @default(PROMOTER)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relaciones
+  visits        Visit[]
+  refreshTokens RefreshToken[]
+  clients       Client[]  // Clientes asignados al promotor
+  
+  // Índices
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+// ==================== CLIENTES ====================
+model Client {
+  id            String    @id @default(cuid())
+  name          String    @db.VarChar(255)
+  businessName  String?   @db.VarChar(255)
+  phone         String?   @db.VarChar(20)
+  email         String?   @db.VarChar(255)
+  address       String?   @db.Text
+  city          String?   @db.VarChar(100)
+  state         String?   @db.VarChar(100)
+  country       String?   @db.VarChar(100) @default("México")
+  postalCode    String?   @db.VarChar(10)
+  
+  // Geolocalización usando PostGIS
+  location      Unsupported("geometry(Point, 4326)")?
+  
+  // Información del negocio
+  businessType  BusinessType?
+  category      String?   @db.VarChar(100)
+  notes         String?   @db.Text
+  
+  // Relaciones
+  promoterId    String?   // Promotor asignado
+  promoter      User?     @relation(fields: [promoterId], references: [id])
+  visits        Visit[]
+  
+  // Metadatos
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Índices
+  @@index([name])
+  @@index([businessName])
+  @@index([promoterId])
+  @@index([businessType])
+  @@index([isActive])
+  @@index([createdAt])
+  @@fulltext([name, businessName, address])
+}
+
+// ==================== VISITAS ====================
+model Visit {
+  id            String    @id @default(cuid())
+  
+  // Relaciones
+  promoterId    String
+  promoter      User      @relation(fields: [promoterId], references: [id])
+  clientId      String
+  client        Client    @relation(fields: [clientId], references: [id])
+  
+  // Información de la visita
+  date          DateTime  @default(now())
+  scheduledDate DateTime? // Fecha programada si es diferente
+  duration      Int?      // Duración en minutos
+  
+  // Geolocalización al momento de la visita
+  location      Unsupported("geometry(Point, 4326)")?
+  address       String?   @db.Text
+  accuracy      Float?    // Precisión del GPS en metros
+  
+  // Estado y notas
+  status        VisitStatus @default(COMPLETED)
+  purpose       VisitPurpose @default(SALES)
+  notes         String    @db.Text
+  rating        Int?      @default(5) // Calificación 1-5
+  
+  // Evidencias fotográficas
+  beforePhotos  Photo[]   @relation("BeforePhotos")
+  afterPhotos   Photo[]   @relation("AfterPhotos")
+  
+  // Firma del cliente
+  signature     String?   @db.Text // Base64 de firma digital
+  signedAt      DateTime?
+  
+  // Metadatos
+  isSynced      Boolean   @default(true) // Para sincronización offline
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Índices
+  @@index([promoterId])
+  @@index([clientId])
+  @@index([date])
+  @@index([status])
+  @@index([purpose])
+  @@index([isSynced])
+  @@index([createdAt])
+}
+
+// ==================== FOTOS ====================
+model Photo {
+  id            String    @id @default(cuid())
+  
+  // Relaciones
+  visitId       String
+  visit         Visit     @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  
+  // Información de la foto
+  url           String    @db.VarChar(500) // URL o path del archivo
+  thumbnailUrl  String?   @db.VarChar(500) // URL de miniatura
+  type          PhotoType @default(BEFORE) // ANTES o DESPUÉS
+  caption       String?   @db.VarChar(255)
+  
+  // Metadatos EXIF
+  latitude      Float?
+  longitude     Float?
+  altitude      Float?
+  accuracy      Float?
+  takenAt       DateTime? // Fecha/hora cuando se tomó la foto
+  
+  // Información del archivo
+  fileName      String    @db.VarChar(255)
+  fileSize      Int?      // Tamaño en bytes
+  mimeType      String?   @db.VarChar(100)
+  
+  // Metadatos
+  isSynced      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Índices
+  @@index([visitId])
+  @@index([type])
+  @@index([takenAt])
+  @@index([isSynced])
+  @@index([createdAt])
+}
+
+// ==================== TOKENS DE REFRESH ====================
+model RefreshToken {
+  id            String    @id @default(cuid())
+  token         String    @unique @db.VarChar(500)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceInfo    String?   @db.VarChar(255) // Información del dispositivo
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  
+  // Índices
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+// ==================== ENUMS ====================
+enum Role {
+  SUPER_ADMIN   @map("super_admin")   // Acceso total
+  ADMIN         @map("admin")         // Administración completa
+  MANAGER       @map("manager")       // Gestión de promotores
+  PROMOTER      @map("promoter")      // Promotor de ventas
+  VIEWER        @map("viewer")        // Solo lectura
+}
+
+enum BusinessType {
+  RETAIL        @map("retail")        // Minorista
+  WHOLESALE     @map("wholesale")     // Mayorista
+  SERVICE       @map("service")       // Servicios
+  MANUFACTURING @map("manufacturing") // Manufactura
+  FOOD          @map("food")          // Alimentos
+  OTHER         @map("other")         // Otro
+}
+
+enum VisitStatus {
+  SCHEDULED     @map("scheduled")     // Programada
+  IN_PROGRESS   @map("in_progress")   // En progreso
+  COMPLETED     @map("completed")     // Completada
+  CANCELLED     @map("cancelled")     // Cancelada
+  NO_SHOW       @map("no_show")       // No se presentó
+}
+
+enum VisitPurpose {
+  SALES         @map("sales")         // Venta
+  FOLLOW_UP     @map("follow_up")     // Seguimiento
+  DELIVERY      @map("delivery")      // Entrega
+  TRAINING      @map("training")      // Capacitación
+  COMPLAINT     @map("complaint")     // Queja/reclamo
+  OTHER         @map("other")         // Otro
+}
+
+enum PhotoType {
+  BEFORE        @map("before")        // Foto ANTES
+  AFTER         @map("after")         // Foto DESPUÉS
+  OTHER         @map("other")         // Otra foto
+}
+
+// ==================== MIGRACIONES ====================
+// Para habilitar PostGIS en PostgreSQL:
+// CREATE EXTENSION IF NOT EXISTS postgis;
