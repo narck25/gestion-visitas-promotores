@@ -198,39 +198,58 @@ export default function NuevaVisitaPage() {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("cliente", visitData.cliente);
-      formData.append("notas", visitData.notas);
-      formData.append("latitude", visitData.location!.lat.toString());
-      formData.append("longitude", visitData.location!.lng.toString());
-      formData.append("accuracy", visitData.location!.accuracy.toString());
-      formData.append("fotoAntes", visitData.fotoAntes!.file);
-      formData.append("fotoDespues", visitData.fotoDespues!.file);
-      formData.append("timestamp", new Date().toISOString());
+      // Validar que todos los datos requeridos estén presentes
+      if (!visitData.cliente.trim()) {
+        throw new Error("El nombre del cliente es requerido");
+      }
 
-      // Simular envío a API (reemplazar con tu endpoint real)
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (!visitData.location) {
+        throw new Error("La ubicación GPS es requerida");
+      }
 
-      console.log("Datos enviados:", {
-        cliente: visitData.cliente,
-        notas: visitData.notas,
-        location: visitData.location,
-        fotoAntes: visitData.fotoAntes?.file.name,
-        fotoDespues: visitData.fotoDespues?.file.name,
+      if (!visitData.fotoAntes) {
+        throw new Error("La foto ANTES es requerida");
+      }
+
+      if (!visitData.fotoDespues) {
+        throw new Error("La foto DESPUÉS es requerida");
+      }
+
+      // Importar módulos necesarios
+      const { getOrCreateClient } = await import("@/lib/clients");
+      const { createVisit, uploadBothVisitImages } = await import("@/lib/visits");
+
+      // 1. Obtener o crear cliente
+      const clientId = await getOrCreateClient(visitData.cliente.trim());
+
+      // 2. Crear la visita
+      const visitResponse = await createVisit({
+        clientId,
+        latitude: visitData.location.lat,
+        longitude: visitData.location.lng,
+        accuracy: visitData.location.accuracy,
+        notes: visitData.notas || "",
       });
 
-      // Aquí iría el fetch real:
-      // const response = await fetch('/api/visitas', {
-      //   method: 'POST',
-      //   headers: { 'Authorization': 'Bearer TOKEN' },
-      //   body: formData
-      // });
+      const visitId = visitResponse.id;
+
+      // 3. Subir imágenes
+      await uploadBothVisitImages(
+        visitId,
+        visitData.fotoAntes.file,
+        visitData.fotoDespues.file
+      );
 
       setSuccess(true);
       setIsSending(false);
-    } catch (err) {
+      
+      // Limpiar recursos de imágenes
+      if (visitData.fotoAntes) URL.revokeObjectURL(visitData.fotoAntes.url);
+      if (visitData.fotoDespues) URL.revokeObjectURL(visitData.fotoDespues.url);
+      
+    } catch (err: any) {
       console.error("Error al enviar visita:", err);
-      setError("Error al enviar la visita. Por favor intenta de nuevo.");
+      setError(err.message || "Error al enviar la visita. Por favor intenta de nuevo.");
       setIsSending(false);
     }
   };

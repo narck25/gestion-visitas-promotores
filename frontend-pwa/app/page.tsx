@@ -1,7 +1,79 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { login, logout, isAuthenticated, getUserInfo, validateCredentials } from "@/lib/auth";
+import { checkServerHealth } from "@/lib/api";
+import { AlertCircle, CheckCircle, Loader2, User, LogOut } from "lucide-react";
 
 export default function Home() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userInfo, setUserInfo] = useState<{ username: string; name: string; role: string } | null>(null);
+  const [showLoginForm, setShowLoginForm] = useState(false);
+  const [loginData, setLoginData] = useState({ username: "", password: "" });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [serverStatus, setServerStatus] = useState<boolean | null>(null);
+
+  // Verificar estado de autenticación al cargar
+  useEffect(() => {
+    const checkAuth = () => {
+      const authStatus = isAuthenticated();
+      setIsLoggedIn(authStatus);
+      if (authStatus) {
+        setUserInfo(getUserInfo());
+      }
+    };
+
+    checkAuth();
+    
+    // Verificar estado del servidor
+    const checkServer = async () => {
+      try {
+        const status = await checkServerHealth();
+        setServerStatus(status);
+      } catch {
+        setServerStatus(false);
+      }
+    };
+
+    checkServer();
+  }, []);
+
+  const handleLogin = async () => {
+    // Validar credenciales
+    const validation = validateCredentials(loginData.username, loginData.password);
+    if (!validation.isValid) {
+      setError(validation.message);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await login(loginData.username, loginData.password);
+      
+      // Actualizar estado
+      setIsLoggedIn(true);
+      setUserInfo(getUserInfo());
+      setShowLoginForm(false);
+      setLoginData({ username: "", password: "" });
+      
+      console.log("Login exitoso:", response.message);
+    } catch (err: any) {
+      setError(err.message || "Error al iniciar sesión");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    setIsLoggedIn(false);
+    setUserInfo(null);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
       {/* Header */}
@@ -18,9 +90,33 @@ export default function Home() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                Iniciar Sesión
-              </button>
+              {isLoggedIn ? (
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                      <User size={16} className="text-blue-600" />
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-gray-900">{userInfo?.name || userInfo?.username}</p>
+                      <p className="text-xs text-gray-500">{userInfo?.role}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                  >
+                    <LogOut size={16} />
+                    Salir
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowLoginForm(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Iniciar Sesión
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -117,6 +213,16 @@ export default function Home() {
           {/* PWA Status */}
           <div className="mt-12 p-6 bg-white rounded-xl shadow-lg border border-gray-100">
             <div className="flex items-center justify-center space-x-4">
+              <div className={`w-3 h-3 rounded-full ${serverStatus === true ? 'bg-green-500 animate-pulse' : serverStatus === false ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
+              <p className="text-gray-700">
+                <span className="font-semibold">Estado del Servidor:</span> {
+                  serverStatus === true ? 'Conectado ✓' : 
+                  serverStatus === false ? 'Desconectado ✗' : 
+                  'Verificando...'
+                }
+              </p>
+            </div>
+            <div className="flex items-center justify-center space-x-4 mt-4">
               <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
               <p className="text-gray-700">
                 <span className="font-semibold">Estado PWA:</span> Aplicación instalable y lista para uso offline
@@ -125,6 +231,89 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {/* Modal de Login */}
+      {showLoginForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">Iniciar Sesión</h2>
+              <button
+                onClick={() => {
+                  setShowLoginForm(false);
+                  setError(null);
+                  setLoginData({ username: "", password: "" });
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertCircle className="text-red-600 mt-0.5" size={20} />
+                <div>
+                  <p className="font-medium text-red-800">{error}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Usuario
+                </label>
+                <input
+                  type="text"
+                  value={loginData.username}
+                  onChange={(e) => setLoginData({ ...loginData, username: e.target.value })}
+                  placeholder="Ingresa tu usuario"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={isLoading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Contraseña
+                </label>
+                <input
+                  type="password"
+                  value={loginData.password}
+                  onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
+                  placeholder="Ingresa tu contraseña"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={isLoading}
+                />
+              </div>
+
+              <button
+                onClick={handleLogin}
+                disabled={isLoading}
+                className={`w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 ${
+                  isLoading
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    : "bg-blue-600 text-white hover:bg-blue-700"
+                }`}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="animate-spin" size={20} />
+                    Iniciando Sesión...
+                  </>
+                ) : (
+                  "Iniciar Sesión"
+                )}
+              </button>
+
+              <p className="text-sm text-gray-500 text-center mt-4">
+                Usa tus credenciales del sistema para acceder
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="bg-gray-900 text-white py-8">
