@@ -177,6 +177,8 @@ TEST_*.md
 test_*.js
 *.test.js
 *.spec.js
+*.test.ts
+*.spec.ts
 
 # ==============================================================================
 # CONFIGURACIONES LOCALES
@@ -187,9 +189,41 @@ test_*.js
 .env.development.local
 .env.test.local
 .env.production.local
+.local.env
+.local-*.env
+
+# ==============================================================================
+# ARCHIVOS DE CONFIGURACIÓN ESPECÍFICOS
+# ==============================================================================
+# Archivos de configuración de desarrollo local
+*-local.yml
+*-local.yaml
+*-local.json
+*-local.config.js
+*-local.config.ts
+
+# Archivos de sesión y estado
+*.session
+*.state
+*.cache
+
+# ==============================================================================
+# ARCHIVOS DE SISTEMA Y BACKUPS
+# ==============================================================================
+*.swp
+*.swo
+*~
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
 
 # ==============================================================================
 # OTROS
 # ==============================================================================
 .git-credentials
 .gitconfig.local
+.DS_Store
+Thumbs.db
+desktop.ini
