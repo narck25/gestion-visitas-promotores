@@ -1,6 +1,6 @@
+require('dotenv').config();
 const app = require('./config/app');
 const prisma = require('./config/database');
-require('dotenv').config();
 
 const PORT = process.env.PORT || 3001;
 

@@ -5,7 +5,6 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { errorHandler, notFoundHandler } = require('../middleware/errorHandler');
-require('dotenv').config();
 
 // Importar rutas
 const authRoutes = require('../routes/authRoutes');
