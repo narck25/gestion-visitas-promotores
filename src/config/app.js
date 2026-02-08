@@ -52,13 +52,34 @@ app.use(limiter);
 // Servir archivos estáticos (uploads)
 app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 
-// Rutas de salud
+// Rutas de salud - extremadamente livianas y sin dependencias
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'API funcionando correctamente',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV || 'production'
+  });
+});
+
+// Liveness probe - solo verifica que el proceso está vivo
+app.get('/health/liveness', (req, res) => {
+  res.status(200).json({
+    success: true,
+    status: 'alive',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Readiness probe - verifica que la aplicación está lista para recibir tráfico
+app.get('/health/readiness', (req, res) => {
+  // Este endpoint siempre responde 200 una vez que el servidor está arriba
+  // No verifica base de datos para no bloquear el healthcheck
+  res.status(200).json({
+    success: true,
+    status: 'ready',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
   });
 });
 
