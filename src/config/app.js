@@ -29,13 +29,37 @@ const app = express();
 // Middleware de seguridad
 app.use(helmet());
 
-// Configurar CORS
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+// Configurar CORS para producción
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Lista de orígenes permitidos
+    const allowedOrigins = [
+      'https://app.prodevfabian.cloud',
+      'https://api.prodevfabian.cloud',
+      'http://localhost:3000' // Para desarrollo local
+    ];
+    
+    // En desarrollo, permitir cualquier origen (para facilitar pruebas)
+    if (process.env.NODE_ENV === 'development') {
+      return callback(null, true);
+    }
+    
+    // En producción, verificar contra la lista de orígenes permitidos
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`Origen CORS bloqueado: ${origin}`);
+      callback(new Error('Origen no permitido por CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400 // 24 horas
+};
+
+app.use(cors(corsOptions));
 
 // Middleware para parsear JSON
 app.use(express.json({ limit: '10mb' }));
