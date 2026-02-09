@@ -4,8 +4,57 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
 const { errorHandler, notFoundHandler } = require('../middleware/errorHandler');
 const logger = require('./logger');
+
+// Función para verificar estado de directorios de Coolify
+const checkCoolifyDirectories = () => {
+  const requiredDirs = ['/app/uploads', '/app/tmp', '/app/logs'];
+  const status = {
+    allHealthy: true,
+    directories: {}
+  };
+
+  requiredDirs.forEach(dirPath => {
+    try {
+      const exists = fs.existsSync(dirPath);
+      const writable = exists ? (() => {
+        try {
+          // Intentar escribir un archivo temporal para verificar permisos
+          const testFile = path.join(dirPath, `.healthcheck-${Date.now()}`);
+          fs.writeFileSync(testFile, 'healthcheck');
+          fs.unlinkSync(testFile);
+          return true;
+        } catch {
+          return false;
+        }
+      })() : false;
+
+      status.directories[dirPath] = {
+        exists,
+        writable,
+        path: dirPath,
+        healthy: exists && writable
+      };
+
+      if (!exists || !writable) {
+        status.allHealthy = false;
+      }
+    } catch (error) {
+      status.directories[dirPath] = {
+        exists: false,
+        writable: false,
+        error: error.message,
+        path: dirPath,
+        healthy: false
+      };
+      status.allHealthy = false;
+    }
+  });
+
+  return status;
+};
 
 // Importar rutas
 const authRoutes = require('../routes/authRoutes');
@@ -88,12 +137,27 @@ if (process.env.NODE_ENV === 'development') {
 // Aplicar rate limiting a todas las rutas
 app.use(limiter);
 
-// Servir archivos estáticos (uploads)
-app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
+// Servir archivos estáticos (uploads) - Compatibilidad Coolify
+// En producción usa /app/uploads, en desarrollo usa ruta relativa
+const uploadsPath = process.env.NODE_ENV === 'production' 
+  ? '/app/uploads' 
+  : path.join(__dirname, '../../uploads');
+
+app.use('/uploads', express.static(uploadsPath, {
+  fallthrough: true, // No lanzar error si no existe
+  setHeaders: (res, path) => {
+    // Headers de seguridad para archivos subidos
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('X-Frame-Options', 'DENY');
+  }
+}));
 
 // Rutas de salud - extremadamente livianas y sin dependencias
 app.get('/health', (req, res) => {
   try {
+    // Verificar directorios de Coolify
+    const storageStatus = checkCoolifyDirectories();
+    
     res.status(200).json({
       success: true,
       status: "ok",
@@ -101,7 +165,11 @@ app.get('/health', (req, res) => {
       timestamp: new Date().toISOString(),
       env: process.env.NODE_ENV || 'production',
       memory: process.memoryUsage(),
-      nodeVersion: process.version
+      nodeVersion: process.version,
+      storage: {
+        healthy: storageStatus.allHealthy,
+        directories: storageStatus.directories
+      }
     });
   } catch (error) {
     // Si hay algún error en el healthcheck, igual responder 200
@@ -110,7 +178,11 @@ app.get('/health', (req, res) => {
       success: true,
       status: "ok",
       timestamp: new Date().toISOString(),
-      note: "Healthcheck básico - error interno ignorado"
+      note: "Healthcheck básico - error interno ignorado",
+      storage: {
+        healthy: false,
+        error: error.message
+      }
     });
   }
 });

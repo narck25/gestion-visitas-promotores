@@ -11,24 +11,82 @@ const PORT = process.env.PORT || 3001;
 let isShuttingDown = false;
 let server = null;
 
-// Crear directorios necesarios si no existen
-const createRequiredDirectories = () => {
-  const directories = [
-    path.join(__dirname, '../../uploads'),
-    path.join(__dirname, '../../tmp'),
-    path.join(__dirname, '../../logs')
+// Inicialización de storage para Coolify - rutas ABSOLUTAS
+const initStorage = () => {
+  // Directorios requeridos por Coolify Directory Mounts
+  const requiredDirs = [
+    '/app/uploads',    // Archivos subidos por usuarios
+    '/app/tmp',        // Archivos temporales
+    '/app/logs'        // Logs de la aplicación
   ];
 
-  directories.forEach(dir => {
-    if (!fs.existsSync(dir)) {
-      try {
-        fs.mkdirSync(dir, { recursive: true });
-        logger.info(`Directorio creado: ${dir}`);
-      } catch (error) {
-        logger.warn(`No se pudo crear directorio ${dir}:`, { error: error.message });
+  logger.info('Inicializando storage para Coolify...');
+
+  requiredDirs.forEach(dirPath => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+        logger.info(`✅ Directorio creado: ${dirPath}`);
+      } else {
+        logger.info(`✅ Directorio ya existe: ${dirPath}`);
       }
+    } catch (error) {
+      // NO cerramos el proceso si falla la creación de directorios
+      logger.warn(`⚠️  No se pudo crear/verificar directorio ${dirPath}:`, { 
+        error: error.message,
+        code: error.code 
+      });
+      logger.info(`ℹ️  El servidor continuará funcionando sin el directorio ${dirPath}`);
     }
   });
+
+  logger.info('✅ Inicialización de storage completada');
+};
+
+// Verificar estado de directorios (para healthcheck)
+const checkStorageHealth = () => {
+  const requiredDirs = ['/app/uploads', '/app/tmp', '/app/logs'];
+  const status = {
+    healthy: true,
+    directories: {}
+  };
+
+  requiredDirs.forEach(dirPath => {
+    try {
+      const exists = fs.existsSync(dirPath);
+      const writable = exists ? (() => {
+        try {
+          // Intentar escribir un archivo temporal para verificar permisos
+          const testFile = path.join(dirPath, `.test-${Date.now()}`);
+          fs.writeFileSync(testFile, 'test');
+          fs.unlinkSync(testFile);
+          return true;
+        } catch {
+          return false;
+        }
+      })() : false;
+
+      status.directories[dirPath] = {
+        exists,
+        writable,
+        path: dirPath
+      };
+
+      if (!exists || !writable) {
+        status.healthy = false;
+      }
+    } catch (error) {
+      status.directories[dirPath] = {
+        exists: false,
+        writable: false,
+        error: error.message,
+        path: dirPath
+      };
+      status.healthy = false;
+    }
+  });
+
+  return status;
 };
 
 // Función para verificar conexión a la base de datos (no bloqueante)
@@ -47,15 +105,19 @@ const checkDatabaseConnection = async () => {
 // Función para iniciar el servidor (no bloqueada por DB)
 const startServer = () => {
   try {
-    // Crear directorios necesarios
-    createRequiredDirectories();
+    // 1. Inicializar storage para Coolify (rutas ABSOLUTAS)
+    initStorage();
 
-    // Iniciar servidor inmediatamente
+    // 2. Iniciar servidor inmediatamente
     server = app.listen(PORT, '0.0.0.0', () => {
       const corsOrigins = process.env.CORS_ALLOWED_ORIGINS || 'https://app.prodevfabian.cloud,https://api.prodevfabian.cloud';
       const environment = process.env.NODE_ENV || 'production';
       
-      // Usar logger estructurado para inicio del servidor
+      // 3. Verificar estado de storage después de iniciar
+      const storageStatus = checkStorageHealth();
+      logger.info('Estado de storage:', { storageStatus });
+      
+      // 4. Usar logger estructurado para inicio del servidor
       logger.serverStart(PORT, environment, corsOrigins);
     });
 
