@@ -21,9 +21,16 @@ const validateEnvVariables = () => {
     'BCRYPT_SALT_ROUNDS'
   ];
 
+  const recommendedEnvVars = [
+    'JWT_EXPIRES_IN',
+    'REFRESH_TOKEN_EXPIRES_IN'
+  ];
+
   const missingVars = [];
   const invalidVars = [];
+  const warningVars = [];
 
+  // Validar variables requeridas
   requiredEnvVars.forEach(varName => {
     const value = process.env[varName];
     
@@ -46,6 +53,21 @@ const validateEnvVariables = () => {
     }
   });
 
+  // Validar variables recomendadas
+  recommendedEnvVars.forEach(varName => {
+    const value = process.env[varName];
+    
+    if (!value || value.trim() === '') {
+      warningVars.push(varName);
+    } else {
+      // Validar formato de expiración
+      const isValidFormat = /^(\d+[smhd]?|\d+)$/.test(value);
+      if (!isValidFormat) {
+        warningVars.push(`${varName}=${value} (formato inválido, usar ej: "15m", "1h", "7d")`);
+      }
+    }
+  });
+
   if (missingVars.length > 0 || invalidVars.length > 0) {
     const errorMessage = [
       '❌ ERROR: Variables de entorno inválidas o faltantes:',
@@ -58,11 +80,27 @@ const validateEnvVariables = () => {
       '  DATABASE_URL=postgresql://usuario:contraseña@host:5432/basedatos',
       '  BCRYPT_SALT_ROUNDS=10 (número entre 1-20)',
       '',
+      'Variables recomendadas (usarán valores por defecto si faltan):',
+      '  JWT_EXPIRES_IN=15m (ej: 15m, 1h, 24h)',
+      '  REFRESH_TOKEN_EXPIRES_IN=7d (ej: 7d, 30d)',
+      '',
       'En Coolify, configura estas variables en Environment Variables.'
     ].join('\n');
 
     logger.error(errorMessage);
     throw new Error('Variables de entorno inválidas');
+  }
+
+  // Mostrar advertencias para variables recomendadas
+  if (warningVars.length > 0) {
+    logger.warn('⚠️  Variables de entorno recomendadas no configuradas o inválidas:', {
+      warnings: warningVars,
+      defaults: {
+        JWT_EXPIRES_IN: '15m',
+        REFRESH_TOKEN_EXPIRES_IN: '7d'
+      }
+    });
+    logger.info('ℹ️  Se usarán valores por defecto para expiración de tokens');
   }
 
   logger.info('✅ Variables de entorno críticas validadas correctamente');

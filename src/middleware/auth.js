@@ -95,19 +95,75 @@ const authorizeRoles = (...roles) => {
 };
 
 /**
- * Middleware para generar tokens
+ * Validar y obtener valores seguros para expiración de tokens
+ */
+const validateTokenExpirations = () => {
+  // Valores por defecto seguros
+  const DEFAULT_ACCESS_TOKEN_EXPIRES_IN = "15m";  // 15 minutos
+  const DEFAULT_REFRESH_TOKEN_EXPIRES_IN = "7d";  // 7 días
+  
+  // Validar JWT_EXPIRES_IN
+  let accessTokenExpiresIn = process.env.JWT_EXPIRES_IN;
+  if (!accessTokenExpiresIn || accessTokenExpiresIn.trim() === '') {
+    console.warn(`JWT_EXPIRES_IN no definido o vacío, usando valor por defecto: "${DEFAULT_ACCESS_TOKEN_EXPIRES_IN}"`);
+    accessTokenExpiresIn = DEFAULT_ACCESS_TOKEN_EXPIRES_IN;
+  } else {
+    // Validar formato (debe ser número de segundos o string timespan)
+    const isValidFormat = /^(\d+[smhd]?|\d+)$/.test(accessTokenExpiresIn);
+    if (!isValidFormat) {
+      console.warn(`JWT_EXPIRES_IN tiene formato inválido: "${accessTokenExpiresIn}", usando valor por defecto: "${DEFAULT_ACCESS_TOKEN_EXPIRES_IN}"`);
+      accessTokenExpiresIn = DEFAULT_ACCESS_TOKEN_EXPIRES_IN;
+    }
+  }
+  
+  // Validar REFRESH_TOKEN_EXPIRES_IN
+  let refreshTokenExpiresIn = process.env.REFRESH_TOKEN_EXPIRES_IN;
+  if (!refreshTokenExpiresIn || refreshTokenExpiresIn.trim() === '') {
+    console.warn(`REFRESH_TOKEN_EXPIRES_IN no definido o vacío, usando valor por defecto: "${DEFAULT_REFRESH_TOKEN_EXPIRES_IN}"`);
+    refreshTokenExpiresIn = DEFAULT_REFRESH_TOKEN_EXPIRES_IN;
+  } else {
+    // Validar formato
+    const isValidFormat = /^(\d+[smhd]?|\d+)$/.test(refreshTokenExpiresIn);
+    if (!isValidFormat) {
+      console.warn(`REFRESH_TOKEN_EXPIRES_IN tiene formato inválido: "${refreshTokenExpiresIn}", usando valor por defecto: "${DEFAULT_REFRESH_TOKEN_EXPIRES_IN}"`);
+      refreshTokenExpiresIn = DEFAULT_REFRESH_TOKEN_EXPIRES_IN;
+    }
+  }
+  
+  return {
+    accessTokenExpiresIn,
+    refreshTokenExpiresIn
+  };
+};
+
+/**
+ * Middleware para generar tokens con validación robusta
  */
 const generateTokens = (userId) => {
+  // Validar variables de entorno críticas
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === '') {
+    throw new Error('JWT_SECRET no está configurado');
+  }
+  
+  if (!process.env.REFRESH_TOKEN_SECRET || process.env.REFRESH_TOKEN_SECRET.trim() === '') {
+    throw new Error('REFRESH_TOKEN_SECRET no está configurado');
+  }
+  
+  // Obtener valores validados para expiración
+  const { accessTokenExpiresIn, refreshTokenExpiresIn } = validateTokenExpirations();
+  
+  // Generar access token
   const accessToken = jwt.sign(
     { userId },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN }
+    { expiresIn: accessTokenExpiresIn }
   );
 
+  // Generar refresh token
   const refreshToken = jwt.sign(
     { userId },
     process.env.REFRESH_TOKEN_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN }
+    { expiresIn: refreshTokenExpiresIn }
   );
 
   return { accessToken, refreshToken };
