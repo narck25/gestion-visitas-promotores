@@ -11,6 +11,62 @@ const PORT = process.env.PORT || 3001;
 let isShuttingDown = false;
 let server = null;
 
+// Validar variables de entorno críticas para autenticación
+const validateEnvVariables = () => {
+  const requiredEnvVars = [
+    'JWT_SECRET',
+    'REFRESH_TOKEN_SECRET',
+    'DATABASE_URL',
+    'BCRYPT_SALT_ROUNDS'
+  ];
+
+  const missingVars = [];
+  const invalidVars = [];
+
+  requiredEnvVars.forEach(varName => {
+    const value = process.env[varName];
+    
+    if (!value || value.trim() === '') {
+      missingVars.push(varName);
+    } else {
+      // Validaciones específicas
+      if (varName === 'BCRYPT_SALT_ROUNDS') {
+        const saltRounds = parseInt(value);
+        if (isNaN(saltRounds) || saltRounds < 1 || saltRounds > 20) {
+          invalidVars.push(`${varName}=${value} (debe ser número entre 1-20)`);
+        }
+      }
+      
+      if (varName === 'JWT_SECRET' || varName === 'REFRESH_TOKEN_SECRET') {
+        if (value.includes('change-this') || value.length < 32) {
+          invalidVars.push(`${varName} (debe tener al menos 32 caracteres y ser único)`);
+        }
+      }
+    }
+  });
+
+  if (missingVars.length > 0 || invalidVars.length > 0) {
+    const errorMessage = [
+      '❌ ERROR: Variables de entorno inválidas o faltantes:',
+      ...missingVars.map(v => `  - ${v}: NO DEFINIDA`),
+      ...invalidVars.map(v => `  - ${v}: VALOR INVÁLIDO`),
+      '',
+      'Para producción, asegúrate de configurar:',
+      '  JWT_SECRET=tu-secreto-jwt-seguro-minimo-32-caracteres',
+      '  REFRESH_TOKEN_SECRET=tu-secreto-refresh-seguro-minimo-32-caracteres',
+      '  DATABASE_URL=postgresql://usuario:contraseña@host:5432/basedatos',
+      '  BCRYPT_SALT_ROUNDS=10 (número entre 1-20)',
+      '',
+      'En Coolify, configura estas variables en Environment Variables.'
+    ].join('\n');
+
+    logger.error(errorMessage);
+    throw new Error('Variables de entorno inválidas');
+  }
+
+  logger.info('✅ Variables de entorno críticas validadas correctamente');
+};
+
 // Inicialización de storage para Coolify - rutas ABSOLUTAS
 const initStorage = () => {
   // Directorios requeridos por Coolify Directory Mounts
@@ -105,19 +161,22 @@ const checkDatabaseConnection = async () => {
 // Función para iniciar el servidor (no bloqueada por DB)
 const startServer = () => {
   try {
-    // 1. Inicializar storage para Coolify (rutas ABSOLUTAS)
+    // 1. Validar variables de entorno críticas
+    validateEnvVariables();
+
+    // 2. Inicializar storage para Coolify (rutas ABSOLUTAS)
     initStorage();
 
-    // 2. Iniciar servidor inmediatamente
+    // 3. Iniciar servidor inmediatamente
     server = app.listen(PORT, '0.0.0.0', () => {
       const corsOrigins = process.env.CORS_ALLOWED_ORIGINS || 'https://app.prodevfabian.cloud,https://api.prodevfabian.cloud';
       const environment = process.env.NODE_ENV || 'production';
       
-      // 3. Verificar estado de storage después de iniciar
+      // 4. Verificar estado de storage después de iniciar
       const storageStatus = checkStorageHealth();
       logger.info('Estado de storage:', { storageStatus });
       
-      // 4. Usar logger estructurado para inicio del servidor
+      // 5. Usar logger estructurado para inicio del servidor
       logger.serverStart(PORT, environment, corsOrigins);
     });
 
