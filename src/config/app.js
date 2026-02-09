@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { errorHandler, notFoundHandler } = require('../middleware/errorHandler');
+const logger = require('./logger');
 
 // Importar rutas
 const authRoutes = require('../routes/authRoutes');
@@ -29,37 +30,48 @@ const app = express();
 // Middleware de seguridad
 app.use(helmet());
 
-// Configurar CORS para producción
+// Configurar CORS dinámico y seguro
 const corsOptions = {
   origin: (origin, callback) => {
-    // Lista de orígenes permitidos
-    const allowedOrigins = [
-      'https://app.prodevfabian.cloud',
-      'https://api.prodevfabian.cloud',
-      'http://localhost:3000' // Para desarrollo local
-    ];
+    // Si no hay origen (ej: solicitudes desde servidor, curl, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Parsear orígenes permitidos desde variable de entorno
+    const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS 
+      ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
+      : [
+          'https://app.prodevfabian.cloud',
+          'https://api.prodevfabian.cloud',
+          'http://localhost:3000' // Para desarrollo local
+        ];
     
     // En desarrollo, permitir cualquier origen (para facilitar pruebas)
     if (process.env.NODE_ENV === 'development') {
       return callback(null, true);
     }
     
-    // En producción, verificar contra la lista de orígenes permitidos
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Verificar si el origen está permitido
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.warn(`Origen CORS bloqueado: ${origin}`);
+      console.warn(`🌐 Origen CORS bloqueado: ${origin}`);
       callback(new Error('Origen no permitido por CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400 // 24 horas
+  maxAge: 86400, // 24 horas
+  optionsSuccessStatus: 204 // Para manejar preflight OPTIONS correctamente
 };
 
 app.use(cors(corsOptions));
+
+// Manejar preflight OPTIONS para todas las rutas
+app.options('*', cors(corsOptions));
 
 // Middleware para parsear JSON
 app.use(express.json({ limit: '10mb' }));
@@ -68,6 +80,9 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Logging en desarrollo
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
+} else {
+  // En producción, usar nuestro logger estructurado
+  app.use(logger.httpLogger);
 }
 
 // Aplicar rate limiting a todas las rutas
@@ -78,33 +93,71 @@ app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 
 // Rutas de salud - extremadamente livianas y sin dependencias
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'API funcionando correctamente',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'production'
-  });
+  try {
+    res.status(200).json({
+      success: true,
+      status: "ok",
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+      env: process.env.NODE_ENV || 'production',
+      memory: process.memoryUsage(),
+      nodeVersion: process.version
+    });
+  } catch (error) {
+    // Si hay algún error en el healthcheck, igual responder 200
+    // para no afectar el monitoreo de Traefik
+    res.status(200).json({
+      success: true,
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      note: "Healthcheck básico - error interno ignorado"
+    });
+  }
 });
 
 // Liveness probe - solo verifica que el proceso está vivo
 app.get('/health/liveness', (req, res) => {
-  res.status(200).json({
-    success: true,
-    status: 'alive',
-    timestamp: new Date().toISOString()
-  });
+  try {
+    res.status(200).json({
+      success: true,
+      status: 'alive',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  } catch (error) {
+    // Fallback si hay error
+    res.status(200).json({
+      success: true,
+      status: 'alive',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Readiness probe - verifica que la aplicación está lista para recibir tráfico
 app.get('/health/readiness', (req, res) => {
-  // Este endpoint siempre responde 200 una vez que el servidor está arriba
-  // No verifica base de datos para no bloquear el healthcheck
-  res.status(200).json({
-    success: true,
-    status: 'ready',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+  try {
+    // Este endpoint siempre responde 200 una vez que el servidor está arriba
+    // No verifica base de datos para no bloquear el healthcheck
+    res.status(200).json({
+      success: true,
+      status: 'ready',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      memory: {
+        rss: Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB',
+        heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + 'MB',
+        heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'
+      }
+    });
+  } catch (error) {
+    // Fallback si hay error
+    res.status(200).json({
+      success: true,
+      status: 'ready',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Rutas de API

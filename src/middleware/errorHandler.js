@@ -2,14 +2,17 @@
  * Middleware para manejo centralizado de errores
  */
 const errorHandler = (err, req, res, next) => {
-  console.error('Error:', err);
+  // Loggear el error con timestamp
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] Error:`, err);
 
   // Errores de validación
   if (err.name === 'ValidationError') {
     return res.status(400).json({
       success: false,
       message: 'Error de validación',
-      errors: err.errors
+      errors: err.errors,
+      timestamp
     });
   }
 
@@ -20,7 +23,8 @@ const errorHandler = (err, req, res, next) => {
       const field = err.meta?.target?.[0] || 'campo';
       return res.status(409).json({
         success: false,
-        message: `El ${field} ya está en uso`
+        message: `El ${field} ya está en uso`,
+        timestamp
       });
     }
 
@@ -28,7 +32,8 @@ const errorHandler = (err, req, res, next) => {
     if (err.code === 'P2025') {
       return res.status(404).json({
         success: false,
-        message: 'Recurso no encontrado'
+        message: 'Recurso no encontrado',
+        timestamp
       });
     }
 
@@ -36,7 +41,8 @@ const errorHandler = (err, req, res, next) => {
     if (err.code === 'P2003') {
       return res.status(400).json({
         success: false,
-        message: 'Error de referencia en la base de datos'
+        message: 'Error de referencia en la base de datos',
+        timestamp
       });
     }
   }
@@ -45,14 +51,16 @@ const errorHandler = (err, req, res, next) => {
   if (err.name === 'JsonWebTokenError') {
     return res.status(401).json({
       success: false,
-      message: 'Token inválido'
+      message: 'Token inválido',
+      timestamp
     });
   }
 
   if (err.name === 'TokenExpiredError') {
     return res.status(401).json({
       success: false,
-      message: 'Token expirado'
+      message: 'Token expirado',
+      timestamp
     });
   }
 
@@ -60,7 +68,8 @@ const errorHandler = (err, req, res, next) => {
   if (err.statusCode && err.message) {
     return res.status(err.statusCode).json({
       success: false,
-      message: err.message
+      message: err.message,
+      timestamp
     });
   }
 
@@ -69,7 +78,9 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     message: process.env.NODE_ENV === 'development' 
       ? err.message 
-      : 'Error interno del servidor'
+      : 'Error interno del servidor',
+    timestamp,
+    requestId: req.id || 'unknown'
   });
 };
 

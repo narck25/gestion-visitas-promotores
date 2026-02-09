@@ -1,6 +1,9 @@
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 const app = require('./config/app');
 const prisma = require('./config/database');
+const logger = require('./config/logger');
 
 const PORT = process.env.PORT || 3001;
 
@@ -8,15 +11,35 @@ const PORT = process.env.PORT || 3001;
 let isShuttingDown = false;
 let server = null;
 
+// Crear directorios necesarios si no existen
+const createRequiredDirectories = () => {
+  const directories = [
+    path.join(__dirname, '../../uploads'),
+    path.join(__dirname, '../../tmp'),
+    path.join(__dirname, '../../logs')
+  ];
+
+  directories.forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        logger.info(`Directorio creado: ${dir}`);
+      } catch (error) {
+        logger.warn(`No se pudo crear directorio ${dir}:`, { error: error.message });
+      }
+    }
+  });
+};
+
 // Función para verificar conexión a la base de datos (no bloqueante)
 const checkDatabaseConnection = async () => {
   try {
     await prisma.$connect();
-    console.log('✅ Conectado a la base de datos PostgreSQL');
+    logger.info('Conectado a la base de datos PostgreSQL');
     return true;
   } catch (error) {
-    console.warn('⚠️  No se pudo conectar a la base de datos:', error.message);
-    console.log('ℹ️  El servidor continuará funcionando sin conexión a DB');
+    logger.warn('No se pudo conectar a la base de datos:', { error: error.message });
+    logger.info('El servidor continuará funcionando sin conexión a DB');
     return false;
   }
 };
@@ -24,14 +47,16 @@ const checkDatabaseConnection = async () => {
 // Función para iniciar el servidor (no bloqueada por DB)
 const startServer = () => {
   try {
+    // Crear directorios necesarios
+    createRequiredDirectories();
+
     // Iniciar servidor inmediatamente
     server = app.listen(PORT, '0.0.0.0', () => {
-      const host = '0.0.0.0';
-      console.log(`🚀 Servidor ejecutándose en http://${host}:${PORT}`);
-      console.log(`📊 Entorno: ${process.env.NODE_ENV || 'production'}`);
-      console.log(`🔗 Health check: http://${host}:${PORT}/health`);
-      console.log(`🔗 Health check (liveness): http://${host}:${PORT}/health/liveness`);
-      console.log(`🔗 Health check (readiness): http://${host}:${PORT}/health/readiness`);
+      const corsOrigins = process.env.CORS_ALLOWED_ORIGINS || 'https://app.prodevfabian.cloud,https://api.prodevfabian.cloud';
+      const environment = process.env.NODE_ENV || 'production';
+      
+      // Usar logger estructurado para inicio del servidor
+      logger.serverStart(PORT, environment, corsOrigins);
     });
 
     // Intentar conectar a la base de datos en segundo plano
@@ -44,28 +69,28 @@ const startServer = () => {
       if (isShuttingDown) return;
       isShuttingDown = true;
       
-      console.log(`\n🛑 Recibida señal ${signal}, iniciando apagado elegante...`);
+      logger.info(`Recibida señal ${signal}, iniciando apagado elegante...`);
       
       // Cerrar servidor HTTP
       if (server) {
         server.close(async () => {
-          console.log('✅ Servidor HTTP cerrado');
+          logger.info('Servidor HTTP cerrado');
           
           // Cerrar conexión a la base de datos si está conectada
           try {
             await prisma.$disconnect();
-            console.log('✅ Conexión a base de datos cerrada');
+            logger.info('Conexión a base de datos cerrada');
           } catch (error) {
-            console.log('ℹ️  No se pudo cerrar conexión a DB:', error.message);
+            logger.warn('No se pudo cerrar conexión a DB:', { error: error.message });
           }
           
-          console.log('👋 Apagado completado');
+          logger.info('Apagado completado');
           process.exit(0);
         });
         
         // Forzar cierre después de 30 segundos (más tiempo para producción)
         setTimeout(() => {
-          console.error('❌ Forzando cierre después de timeout de 30s');
+          logger.error('Forzando cierre después de timeout de 30s');
           process.exit(1);
         }, 30000);
       } else {
@@ -80,18 +105,22 @@ const startServer = () => {
     // Manejar señal de reinicio (para PM2/process managers)
     process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2'));
 
-    // Manejar errores no capturados sin derribar el proceso
+    // Manejar errores no capturados sin derribar el proceso - MEJORADO
     process.on('uncaughtException', (error) => {
-      console.error('❌ Error no capturado:', error.message);
-      console.error('Stack:', error.stack);
-      // No llamamos a gracefulShutdown para mantener el servidor arriba
-      // Solo registramos el error
+      logger.error('Error no capturado', error, { 
+        type: 'uncaughtException',
+        pid: process.pid 
+      });
+      // NO cerramos el proceso - mantenemos el servidor arriba
     });
 
     process.on('unhandledRejection', (reason, promise) => {
-      console.error('❌ Promesa rechazada no manejada:', reason);
-      // No llamamos a gracefulShutdown para mantener el servidor arriba
-      // Solo registramos el error
+      logger.error('Promesa rechazada no manejada', null, { 
+        reason: String(reason),
+        type: 'unhandledRejection',
+        pid: process.pid 
+      });
+      // NO cerramos el proceso - mantenemos el servidor arriba
     });
 
     // Manejar errores específicos de Prisma sin derribar el proceso
@@ -106,7 +135,7 @@ const startServer = () => {
     });
 
   } catch (error) {
-    console.error('❌ Error crítico al iniciar el servidor:', error);
+    logger.error('Error crítico al iniciar el servidor', error);
     process.exit(1);
   }
 };
