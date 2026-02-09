@@ -4,6 +4,7 @@ const path = require('path');
 const app = require('./config/app');
 const prisma = require('./config/database');
 const logger = require('./config/logger');
+const { initializeDatabaseWithRetry } = require('./config/prismaInit');
 
 const PORT = process.env.PORT || 3001;
 
@@ -145,21 +146,8 @@ const checkStorageHealth = () => {
   return status;
 };
 
-// Función para verificar conexión a la base de datos (no bloqueante)
-const checkDatabaseConnection = async () => {
-  try {
-    await prisma.$connect();
-    logger.info('Conectado a la base de datos PostgreSQL');
-    return true;
-  } catch (error) {
-    logger.warn('No se pudo conectar a la base de datos:', { error: error.message });
-    logger.info('El servidor continuará funcionando sin conexión a DB');
-    return false;
-  }
-};
-
-// Función para iniciar el servidor (no bloqueada por DB)
-const startServer = () => {
+// Función para iniciar el servidor con inicialización de base de datos
+const startServer = async () => {
   try {
     // 1. Validar variables de entorno críticas
     validateEnvVariables();
@@ -167,23 +155,52 @@ const startServer = () => {
     // 2. Inicializar storage para Coolify (rutas ABSOLUTAS)
     initStorage();
 
-    // 3. Iniciar servidor inmediatamente
+    // 3. Inicializar base de datos con reintentos (no bloqueante)
+    logger.info('Inicializando conexión a base de datos...');
+    const dbInitResult = await initializeDatabaseWithRetry(prisma);
+    
+    if (!dbInitResult.success) {
+      logger.warn('Base de datos no inicializada correctamente:', {
+        status: dbInitResult.status,
+        message: dbInitResult.message
+      });
+      
+      if (dbInitResult.status.errorType === 'migration') {
+        logger.error('❌ ERROR CRÍTICO: Tablas de base de datos no existen');
+        logger.info('ℹ️  Para producción en Coolify, ejecute antes de iniciar:');
+        logger.info('    npx prisma migrate deploy');
+        logger.info('ℹ️  O configure en Dockerfile:');
+        logger.info('    RUN npx prisma generate && npx prisma migrate deploy');
+      }
+    } else {
+      logger.info('✅ Base de datos inicializada correctamente');
+    }
+
+    // 4. Iniciar servidor HTTP (siempre se inicia, incluso sin DB)
     server = app.listen(PORT, '0.0.0.0', () => {
       const corsOrigins = process.env.CORS_ALLOWED_ORIGINS || 'https://app.prodevfabian.cloud,https://api.prodevfabian.cloud';
       const environment = process.env.NODE_ENV || 'production';
       
-      // 4. Verificar estado de storage después de iniciar
+      // 5. Verificar estado de storage después de iniciar
       const storageStatus = checkStorageHealth();
       logger.info('Estado de storage:', { storageStatus });
       
-      // 5. Usar logger estructurado para inicio del servidor
+      // 6. Log estado de base de datos
+      logger.info('Estado de base de datos:', { 
+        connected: dbInitResult.success,
+        tablesExist: dbInitResult.success ? dbInitResult.status.userTableExists : false
+      });
+      
+      // 7. Usar logger estructurado para inicio del servidor
       logger.serverStart(PORT, environment, corsOrigins);
+      
+      // 8. Mensaje importante para producción
+      if (process.env.NODE_ENV === 'production' && !dbInitResult.success) {
+        logger.warn('⚠️  ADVERTENCIA: Servidor iniciado SIN base de datos funcional');
+        logger.info('ℹ️  Los endpoints de autenticación devolverán error 503');
+        logger.info('ℹ️  Ejecute migraciones: npx prisma migrate deploy');
+      }
     });
-
-    // Intentar conectar a la base de datos en segundo plano
-    setTimeout(async () => {
-      await checkDatabaseConnection();
-    }, 1000);
 
     // Manejo de cierre elegante mejorado
     const gracefulShutdown = async (signal) => {

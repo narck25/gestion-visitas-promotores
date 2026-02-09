@@ -169,6 +169,33 @@ const register = async (req, res, next) => {
           message: 'Error en relación de datos'
         });
       }
+      
+      if (error.code === 'P2021' || error.code === 'P2010') {
+        // Tabla no existe o error de migración
+        logger.error(`[${requestId}] Error de migración de base de datos`, {
+          code: error.code,
+          message: error.message,
+          meta: error.meta
+        });
+        
+        return res.status(503).json({
+          success: false,
+          message: 'Base de datos no inicializada',
+          error: 'Las tablas de la base de datos no existen',
+          solution: 'Ejecute migraciones: npx prisma migrate deploy',
+          documentation: 'Ver PRISMA_MIGRATION_GUIDE.md para instrucciones'
+        });
+      }
+      
+      if (error.code === 'P1001' || error.code === 'P1002' || error.code === 'P1003') {
+        // Error de conexión a base de datos
+        return res.status(503).json({
+          success: false,
+          message: 'Error de conexión a base de datos',
+          error: 'No se puede conectar al servidor de base de datos',
+          solution: 'Verifique DATABASE_URL y que PostgreSQL esté ejecutándose'
+        });
+      }
     }
 
     // Error de bcrypt
