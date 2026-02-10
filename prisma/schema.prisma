@@ -7,17 +7,25 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  PROMOTER
+  VIEWER
+}
+
 model User {
-  id            String         @id @default(dbgenerated("gen_random_uuid()"))
+  id            String         @id @default(uuid())
   email         String         @unique
   password      String
   name          String
   phone         String?
   avatar        String?
-  role          String         @default("PROMOTER")
+  role          Role           @default(PROMOTER)
   isActive      Boolean        @default(true)
   createdAt     DateTime       @default(now()) @db.Timestamp(6)
-  updatedAt     DateTime       @default(now()) @updatedAt @db.Timestamp(6)
+  updatedAt     DateTime       @updatedAt @db.Timestamp(6)
   refreshTokens RefreshToken[]
   visits        Visit[]
 
