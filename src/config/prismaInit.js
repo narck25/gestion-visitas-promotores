@@ -1,4 +1,5 @@
 const { execSync } = require('child_process');
+const bcrypt = require('bcryptjs');
 const logger = require('./logger');
 
 /**
@@ -45,6 +46,83 @@ const initializePrisma = () => {
       return false;
     }
     
+    return false;
+  }
+};
+
+/**
+ * Función para inicializar el usuario administrador global
+ * Crea el usuario admin si no existe
+ */
+const initializeAdminUser = async (prisma) => {
+  try {
+    const adminEmail = 'sistemas@kram.mx';
+    const adminPassword = 'Sit3masKr4m2026';
+    
+    logger.info('Verificando existencia de usuario administrador...');
+    
+    // Verificar si el admin ya existe
+    const existingAdmin = await prisma.user.findUnique({
+      where: { email: adminEmail }
+    });
+    
+    if (existingAdmin) {
+      logger.info('✅ Usuario administrador ya existe', {
+        email: adminEmail,
+        role: existingAdmin.role,
+        id: existingAdmin.id
+      });
+      
+      // Verificar si el admin tiene el rol correcto
+      if (existingAdmin.role !== 'ADMIN' && existingAdmin.role !== 'SUPER_ADMIN') {
+        logger.info('Actualizando rol del usuario administrador a ADMIN...');
+        await prisma.user.update({
+          where: { email: adminEmail },
+          data: { role: 'ADMIN' }
+        });
+        logger.info('✅ Rol del usuario administrador actualizado a ADMIN');
+      }
+      
+      return true;
+    }
+    
+    // Crear el admin si no existe
+    logger.info('Creando usuario administrador...');
+    
+    // Validar y obtener salt rounds
+    const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
+    if (isNaN(saltRounds) || saltRounds < 1 || saltRounds > 20) {
+      throw new Error('Configuración de seguridad inválida: BCRYPT_SALT_ROUNDS');
+    }
+    
+    // Hash de la contraseña
+    const hashedPassword = await bcrypt.hash(adminPassword, saltRounds);
+    
+    // Crear usuario admin
+    const adminUser = await prisma.user.create({
+      data: {
+        email: adminEmail,
+        password: hashedPassword,
+        name: 'Administrador del Sistema',
+        role: 'ADMIN',
+        isActive: true
+      }
+    });
+    
+    logger.info('✅ Usuario administrador creado exitosamente', {
+      email: adminEmail,
+      role: adminUser.role,
+      id: adminUser.id
+    });
+    
+    return true;
+  } catch (error) {
+    logger.error('Error inicializando usuario administrador:', {
+      error: error.message,
+      code: error.code
+    });
+    
+    // No lanzar error para no bloquear el inicio de la aplicación
     return false;
   }
 };
@@ -124,6 +202,16 @@ const initializeDatabaseWithRetry = async (prisma, maxRetries = 3, delayMs = 500
       
       if (status.connected && status.userTableExists) {
         logger.info('✅ Base de datos conectada y tablas existentes');
+        
+        // Inicializar usuario administrador después de verificar conexión
+        try {
+          await initializeAdminUser(prisma);
+        } catch (adminError) {
+          logger.warn('Error inicializando usuario administrador, continuando...', {
+            error: adminError.message
+          });
+        }
+        
         return { success: true, status };
       }
       
@@ -145,6 +233,16 @@ const initializeDatabaseWithRetry = async (prisma, maxRetries = 3, delayMs = 500
           const migrationSuccess = initializePrisma();
           if (migrationSuccess) {
             logger.info('✅ Migraciones aplicadas exitosamente');
+            
+            // Inicializar usuario administrador después de aplicar migraciones
+            try {
+              await initializeAdminUser(prisma);
+            } catch (adminError) {
+              logger.warn('Error inicializando usuario administrador, continuando...', {
+                error: adminError.message
+              });
+            }
+            
             return { success: true, status: { ...status, userTableExists: true } };
           }
         }
@@ -179,5 +277,6 @@ const initializeDatabaseWithRetry = async (prisma, maxRetries = 3, delayMs = 500
 module.exports = {
   initializePrisma,
   checkDatabaseStatus,
-  initializeDatabaseWithRetry
+  initializeDatabaseWithRetry,
+  initializeAdminUser
 };

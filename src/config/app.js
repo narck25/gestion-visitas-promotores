@@ -60,6 +60,7 @@ const checkCoolifyDirectories = () => {
 const authRoutes = require('../routes/authRoutes');
 const visitRoutes = require('../routes/visitRoutes');
 const visitImageRoutes = require('../routes/visitImageRoutes');
+const adminRoutes = require('../routes/adminRoutes');
 
 // Configuración de rate limiting
 const limiter = rateLimit({
@@ -236,6 +237,7 @@ app.get('/health/readiness', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/visits', visitRoutes);
 app.use('/api/visits/images', visitImageRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Ruta raíz
 app.get('/', (req, res) => {
@@ -247,6 +249,7 @@ app.get('/', (req, res) => {
       auth: '/api/auth',
       visits: '/api/visits',
       visitsWithImages: '/api/visits/images',
+      admin: '/api/admin',
       health: '/health',
       uploads: '/uploads'
     }
