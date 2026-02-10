@@ -22,6 +22,13 @@ const refreshTokenValidation = [
   body('refreshToken').notEmpty()
 ];
 
+// Validaciones para actualizar perfil
+const updateProfileValidation = [
+  body('name').optional().notEmpty().trim(),
+  body('phone').optional().trim(),
+  body('avatar').optional().trim()
+];
+
 /**
  * @route   POST /api/auth/register
  * @desc    Registrar nuevo usuario
@@ -56,5 +63,12 @@ router.post('/logout', authController.logout);
  * @access  Private
  */
 router.get('/profile', authenticateToken, authController.getProfile);
+
+/**
+ * @route   PUT /api/auth/profile
+ * @desc    Actualizar perfil del usuario autenticado
+ * @access  Private
+ */
+router.put('/profile', authenticateToken, updateProfileValidation, authController.updateProfile);
 
 module.exports = router;

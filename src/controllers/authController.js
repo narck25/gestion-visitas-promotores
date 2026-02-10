@@ -407,6 +407,8 @@ const getProfile = async (req, res, next) => {
         id: true,
         email: true,
         name: true,
+        phone: true,
+        avatar: true,
         role: true,
         isActive: true,
         createdAt: true,
@@ -423,10 +425,75 @@ const getProfile = async (req, res, next) => {
   }
 };
 
+/**
+ * Controlador para actualizar perfil de usuario
+ */
+const updateProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { name, phone, avatar } = req.body;
+
+    // Validar que al menos un campo sea proporcionado
+    if (!name && !phone && !avatar) {
+      return res.status(400).json({
+        success: false,
+        message: 'Debe proporcionar al menos un campo para actualizar (name, phone, avatar)'
+      });
+    }
+
+    // Preparar datos para actualizar
+    const updateData = {};
+    
+    if (name !== undefined) {
+      if (name.trim() === '') {
+        return res.status(400).json({
+          success: false,
+          message: 'El nombre no puede estar vacío'
+        });
+      }
+      updateData.name = name.trim();
+    }
+    
+    if (phone !== undefined) {
+      updateData.phone = phone ? phone.trim() : null;
+    }
+    
+    if (avatar !== undefined) {
+      updateData.avatar = avatar ? avatar.trim() : null;
+    }
+
+    // Actualizar usuario
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        avatar: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Perfil actualizado exitosamente',
+      data: { user: updatedUser }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
   refreshToken,
   logout,
-  getProfile
+  getProfile,
+  updateProfile
 };
