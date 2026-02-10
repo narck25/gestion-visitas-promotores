@@ -7,167 +7,65 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ==================== USUARIOS ====================
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
+  id            String         @id @default(dbgenerated("gen_random_uuid()"))
+  email         String         @unique
   password      String
   name          String
-  phone         String?
-  avatar        String?
-  role          Role      @default(PROMOTER)
-  isActive      Boolean   @default(true)
-  lastLoginAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  // Relaciones
-  visits        Visit[]
+  role          String         @default("PROMOTER")
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime       @default(now()) @updatedAt @db.Timestamp(6)
   refreshTokens RefreshToken[]
-  clients       Client[]
-  
-  // Índices
-  @@index([email])
-  @@index([role])
-  @@index([isActive])
-  @@index([createdAt])
-}
-
-// ==================== CLIENTES ====================
-model Client {
-  id            String    @id @default(cuid())
-  name          String
-  businessName  String?
-  phone         String?
-  email         String?
-  address       String?
-  city          String?
-  state         String?
-  country       String?   @default("México")
-  postalCode    String?
-  
-  // Información del negocio
-  businessType  BusinessType?
-  category      String?
-  notes         String?
-  
-  // Relaciones
-  promoterId    String?
-  promoter      User?     @relation(fields: [promoterId], references: [id])
   visits        Visit[]
-  
-  // Metadatos
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  // Índices
-  @@index([name])
-  @@index([businessName])
-  @@index([promoterId])
-  @@index([businessType])
-  @@index([isActive])
-  @@index([createdAt])
+
+  @@index([email], map: "idx_user_email")
 }
 
-// ==================== VISITAS ====================
+model Client {
+  id           String   @id @default(dbgenerated("gen_random_uuid()"))
+  name         String
+  phone        String?
+  email        String?
+  address      String?
+  businessType String?
+  notes        String?
+  createdAt    DateTime @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamp(6)
+  visits       Visit[]
+}
+
 model Visit {
-  id            String    @id @default(cuid())
-  
-  // Relaciones
-  promoterId    String
-  promoter      User      @relation(fields: [promoterId], references: [id])
-  clientId      String
-  client        Client    @relation(fields: [clientId], references: [id])
-  
-  // Información de la visita
-  date          DateTime  @default(now())
-  scheduledDate DateTime?
-  duration      Int?
-  
-  // Geolocalización
-  latitude      Float?
-  longitude     Float?
-  address       String?
-  accuracy      Float?
-  
-  // Estado y notas
-  status        VisitStatus @default(COMPLETED)
-  purpose       VisitPurpose @default(SALES)
-  notes         String
-  rating        Int?      @default(5)
-  
-  // Fotos (como array de strings)
-  beforePhotos  String[]
-  afterPhotos   String[]
-  
-  // Firma del cliente
-  signature     String?
-  signedAt      DateTime?
-  
-  // Metadatos
-  isSynced      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  // Índices
-  @@index([promoterId])
-  @@index([clientId])
-  @@index([date])
-  @@index([status])
-  @@index([purpose])
-  @@index([isSynced])
-  @@index([createdAt])
+  id         String   @id @default(dbgenerated("gen_random_uuid()"))
+  promoterId String
+  clientId   String
+  date       DateTime @default(now()) @db.Timestamp(6)
+  latitude   Float?
+  longitude  Float?
+  address    String?
+  notes      String
+  status     String   @default("COMPLETED")
+  photos     String[] @default([])
+  signature  String?
+  createdAt  DateTime @default(now()) @db.Timestamp(6)
+  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamp(6)
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  promoter   User     @relation(fields: [promoterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([clientId], map: "idx_visit_client_id")
+  @@index([date], map: "idx_visit_date")
+  @@index([promoterId], map: "idx_visit_promoter_id")
+  @@index([status], map: "idx_visit_status")
 }
 
-// ==================== TOKENS DE REFRESH ====================
 model RefreshToken {
-  id            String    @id @default(cuid())
-  token         String    @unique
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deviceInfo    String?
-  expiresAt     DateTime
-  revokedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  
-  // Índices
-  @@index([userId])
-  @@index([token])
-  @@index([expiresAt])
-}
+  id        String   @id @default(dbgenerated("gen_random_uuid()"))
+  token     String   @unique
+  userId    String
+  expiresAt DateTime @db.Timestamp(6)
+  createdAt DateTime @default(now()) @db.Timestamp(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-// ==================== ENUMS ====================
-enum Role {
-  SUPER_ADMIN
-  ADMIN
-  MANAGER
-  PROMOTER
-  VIEWER
-}
-
-enum BusinessType {
-  RETAIL
-  WHOLESALE
-  SERVICE
-  MANUFACTURING
-  FOOD
-  OTHER
-}
-
-enum VisitStatus {
-  SCHEDULED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-  NO_SHOW
-}
-
-enum VisitPurpose {
-  SALES
-  FOLLOW_UP
-  DELIVERY
-  TRAINING
-  COMPLAINT
-  OTHER
+  @@index([token], map: "idx_refresh_token_token")
+  @@index([userId], map: "idx_refresh_token_user_id")
 }

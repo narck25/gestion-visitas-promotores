@@ -21,7 +21,10 @@ const updateVisitValidation = [
   body('notes').optional().isString(),
   body('status').optional().isIn(['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']),
   body('photos').optional().isArray(),
-  body('signature').optional().isString()
+  body('signature').optional().isString(),
+  body('latitude').optional().isFloat(),
+  body('longitude').optional().isFloat(),
+  body('address').optional().isString()
 ];
 
 // Validaciones para query parameters
@@ -30,7 +33,8 @@ const getVisitsValidation = [
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('status').optional().isIn(['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']),
   query('startDate').optional().isISO8601(),
-  query('endDate').optional().isISO8601()
+  query('endDate').optional().isISO8601(),
+  query('promoterId').optional().isString()
 ];
 
 /**

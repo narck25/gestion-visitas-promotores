@@ -16,6 +16,21 @@ const createVisit = async (req, res, next) => {
       });
     }
 
+    // Validar coordenadas si se proporcionan
+    if (latitude && (latitude < -90 || latitude > 90)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Latitud inválida. Debe estar entre -90 y 90 grados'
+      });
+    }
+
+    if (longitude && (longitude < -180 || longitude > 180)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Longitud inválida. Debe estar entre -180 y 180 grados'
+      });
+    }
+
     // Verificar que el cliente existe
     const client = await prisma.client.findUnique({
       where: { id: clientId }
@@ -72,21 +87,37 @@ const createVisit = async (req, res, next) => {
 };
 
 /**
- * Controlador para obtener todas las visitas del promotor
+ * Controlador para obtener visitas con filtros por rol de usuario
  */
 const getVisits = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, status, startDate, endDate } = req.query;
-    const promoterId = req.user.id;
+    const { page = 1, limit = 10, status, startDate, endDate, promoterId: filterPromoterId } = req.query;
+    const userId = req.user.id;
+    const userRole = req.user.role;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const take = parseInt(limit);
 
-    // Construir filtros
-    const where = {
-      promoterId
-    };
+    // Construir filtros base
+    const where = {};
 
+    // Filtrar por rol de usuario
+    // Si el usuario es PROMOTER o VIEWER, solo puede ver sus propias visitas
+    // Si el usuario es ADMIN, SUPER_ADMIN o MANAGER, puede ver todas las visitas
+    if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
+      where.promoterId = userId;
+    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN' || userRole === 'MANAGER') {
+      // Los administradores pueden ver todas las visitas
+      // Si se proporciona un promoterId específico, filtrar por ese promotor
+      if (filterPromoterId) {
+        where.promoterId = filterPromoterId;
+      }
+    } else {
+      // Para otros roles no definidos, por defecto solo sus visitas
+      where.promoterId = userId;
+    }
+
+    // Filtros adicionales
     if (status) {
       where.status = status;
     }
@@ -116,6 +147,13 @@ const getVisits = async (req, res, next) => {
               id: true,
               name: true,
               phone: true
+            }
+          },
+          promoter: {
+            select: {
+              id: true,
+              name: true,
+              email: true
             }
           }
         }
@@ -150,13 +188,21 @@ const getVisits = async (req, res, next) => {
 const getVisitById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const promoterId = req.user.id;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    // Construir filtro según el rol del usuario
+    const where = { id };
+
+    // Si el usuario es PROMOTER o VIEWER, solo puede ver sus propias visitas
+    // Si el usuario es ADMIN, SUPER_ADMIN o MANAGER, puede ver cualquier visita
+    if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
+      where.promoterId = userId;
+    }
+    // Para ADMIN, SUPER_ADMIN y MANAGER no se agrega filtro de promoterId
 
     const visit = await prisma.visit.findFirst({
-      where: {
-        id,
-        promoterId
-      },
+      where,
       include: {
         client: {
           select: {
@@ -200,15 +246,38 @@ const getVisitById = async (req, res, next) => {
 const updateVisit = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const promoterId = req.user.id;
-    const { notes, status, photos, signature } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    const { notes, status, photos, signature, latitude, longitude, address } = req.body;
 
-    // Verificar que la visita existe y pertenece al promotor
+    // Validar coordenadas si se proporcionan
+    if (latitude && (latitude < -90 || latitude > 90)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Latitud inválida. Debe estar entre -90 y 90 grados'
+      });
+    }
+
+    if (longitude && (longitude < -180 || longitude > 180)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Longitud inválida. Debe estar entre -180 y 180 grados'
+      });
+    }
+
+    // Construir filtro según el rol del usuario
+    const where = { id };
+
+    // Si el usuario es PROMOTER o VIEWER, solo puede actualizar sus propias visitas
+    // Si el usuario es ADMIN, SUPER_ADMIN o MANAGER, puede actualizar cualquier visita
+    if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
+      where.promoterId = userId;
+    }
+    // Para ADMIN, SUPER_ADMIN y MANAGER no se agrega filtro de promoterId
+
+    // Verificar que la visita existe y el usuario tiene permisos
     const existingVisit = await prisma.visit.findFirst({
-      where: {
-        id,
-        promoterId
-      }
+      where
     });
 
     if (!existingVisit) {
@@ -218,21 +287,45 @@ const updateVisit = async (req, res, next) => {
       });
     }
 
-    // Actualizar visita
-    const visit = await prisma.visit.update({
+    // Preparar datos para actualizar
+    const updateData = {
+      notes: notes || existingVisit.notes,
+      status: status || existingVisit.status,
+      photos: photos || existingVisit.photos,
+      signature: signature || existingVisit.signature
+    };
+
+    // Actualizar coordenadas si se proporcionan
+    if (latitude !== undefined) {
+      updateData.latitude = latitude ? parseFloat(latitude) : null;
+    }
+    if (longitude !== undefined) {
+      updateData.longitude = longitude ? parseFloat(longitude) : null;
+    }
+    
+    // Actualizar dirección si se proporciona
+    if (address !== undefined) {
+      updateData.address = address || null;
+    }
+
+    // Realizar la actualización
+    const updatedVisit = await prisma.visit.update({
       where: { id },
-      data: {
-        notes: notes || existingVisit.notes,
-        status: status || existingVisit.status,
-        photos: photos || existingVisit.photos,
-        signature: signature || existingVisit.signature
-      },
+      data: updateData,
       include: {
         client: {
           select: {
             id: true,
             name: true,
-            phone: true
+            phone: true,
+            email: true
+          }
+        },
+        promoter: {
+          select: {
+            id: true,
+            name: true,
+            email: true
           }
         }
       }
@@ -241,7 +334,7 @@ const updateVisit = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Visita actualizada exitosamente',
-      data: { visit }
+      data: { visit: updatedVisit }
     });
   } catch (error) {
     next(error);
@@ -254,14 +347,22 @@ const updateVisit = async (req, res, next) => {
 const deleteVisit = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const promoterId = req.user.id;
+    const userId = req.user.id;
+    const userRole = req.user.role;
 
-    // Verificar que la visita existe y pertenece al promotor
+    // Construir filtro según el rol del usuario
+    const where = { id };
+
+    // Si el usuario es PROMOTER o VIEWER, solo puede eliminar sus propias visitas
+    // Si el usuario es ADMIN, SUPER_ADMIN o MANAGER, puede eliminar cualquier visita
+    if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
+      where.promoterId = userId;
+    }
+    // Para ADMIN, SUPER_ADMIN y MANAGER no se agrega filtro de promoterId
+
+    // Verificar que la visita existe y el usuario tiene permisos
     const existingVisit = await prisma.visit.findFirst({
-      where: {
-        id,
-        promoterId
-      }
+      where
     });
 
     if (!existingVisit) {
@@ -290,8 +391,28 @@ const deleteVisit = async (req, res, next) => {
  */
 const getVisitStats = async (req, res, next) => {
   try {
-    const promoterId = req.user.id;
-    const { startDate, endDate } = req.query;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    const { startDate, endDate, promoterId: filterPromoterId } = req.query;
+
+    // Construir filtros base
+    const where = {};
+
+    // Filtrar por rol de usuario
+    // Si el usuario es PROMOTER o VIEWER, solo puede ver sus propias estadísticas
+    // Si el usuario es ADMIN, SUPER_ADMIN o MANAGER, puede ver estadísticas de cualquier promotor
+    if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
+      where.promoterId = userId;
+    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN' || userRole === 'MANAGER') {
+      // Los administradores pueden ver estadísticas de cualquier promotor
+      // Si se proporciona un promoterId específico, filtrar por ese promotor
+      if (filterPromoterId) {
+        where.promoterId = filterPromoterId;
+      }
+    } else {
+      // Para otros roles no definidos, por defecto solo sus estadísticas
+      where.promoterId = userId;
+    }
 
     // Construir filtros de fecha
     const dateFilter = {};
@@ -301,10 +422,6 @@ const getVisitStats = async (req, res, next) => {
     if (endDate) {
       dateFilter.lte = new Date(endDate);
     }
-
-    const where = {
-      promoterId
-    };
 
     if (Object.keys(dateFilter).length > 0) {
       where.date = dateFilter;
