@@ -31,7 +31,7 @@ const createVisit = async (req, res, next) => {
       });
     }
 
-    // Verificar que el cliente existe
+    // Verificar que el cliente existe y pertenece al usuario (excepto para administradores)
     const client = await prisma.client.findUnique({
       where: { id: clientId }
     });
@@ -40,6 +40,17 @@ const createVisit = async (req, res, next) => {
       return res.status(404).json({
         success: false,
         message: 'Cliente no encontrado'
+      });
+    }
+
+    // Validar que el cliente pertenece al usuario (excepto para administradores)
+    const userRole = req.user.role;
+    const isAdmin = ['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(userRole);
+    
+    if (!isAdmin && client.promoterId !== promoterId) {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para crear visitas para este cliente'
       });
     }
 
