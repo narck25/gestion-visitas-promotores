@@ -48,14 +48,15 @@ const register = async (req, res, next) => {
       });
     }
 
-    // Verificar si el usuario ya existe
-    logger.info(`[${requestId}] Verificando si usuario existe`, { email: `${email.substring(0, 3)}...` });
+    // Verificar si el usuario ya existe (usando email normalizado)
+    const emailNormalized = email.trim().toLowerCase();
+    logger.info(`[${requestId}] Verificando si usuario existe`, { email: `${emailNormalized.substring(0, 10)}...` });
     const existingUser = await prisma.user.findUnique({
-      where: { email }
+      where: { email: emailNormalized }
     });
 
     if (existingUser) {
-      logger.warn(`[${requestId}] Usuario ya existe`, { email: `${email.substring(0, 3)}...` });
+      logger.warn(`[${requestId}] Usuario ya existe`, { email: `${emailNormalized.substring(0, 10)}...` });
       return res.status(409).json({
         success: false,
         message: 'El email ya está registrado'
@@ -80,7 +81,7 @@ const register = async (req, res, next) => {
     logger.info(`[${requestId}] Creando usuario en base de datos`);
     const user = await prisma.user.create({
       data: {
-        email: email.trim(),
+        email: email.trim().toLowerCase(), // Guardar en minúsculas para consistencia
         password: hashedPassword,
         name: name.trim(),
         role: (role && ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'PROMOTER', 'VIEWER'].includes(role)) 
@@ -223,20 +224,40 @@ const register = async (req, res, next) => {
  * Controlador para login de usuarios
  */
 const login = async (req, res, next) => {
+  const startTime = Date.now();
+  const requestId = `login-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
   try {
     const { email, password } = req.body;
 
+    logger.info(`[${requestId}] Iniciando login`, { 
+      email: email ? `${email.substring(0, 3)}...` : 'no-provided',
+      hasPassword: !!password
+    });
+
     // Validar campos requeridos
     if (!email || !password) {
+      logger.warn(`[${requestId}] Campos requeridos faltantes`, { 
+        hasEmail: !!email, 
+        hasPassword: !!password 
+      });
       return res.status(400).json({
         success: false,
         message: 'Email y contraseña son requeridos'
       });
     }
 
-    // Buscar usuario
+    // Normalizar email (igual que en register)
+    const emailNormalized = email.trim().toLowerCase();
+    logger.info(`[${requestId}] Email normalizado`, { 
+      original: `${email.substring(0, 10)}...`,
+      normalized: `${emailNormalized.substring(0, 10)}...`
+    });
+
+    // Buscar usuario con email normalizado
+    logger.info(`[${requestId}] Buscando usuario en base de datos`);
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: emailNormalized },
       select: {
         id: true,
         email: true,
@@ -248,29 +269,47 @@ const login = async (req, res, next) => {
     });
 
     if (!user) {
+      logger.warn(`[${requestId}] Usuario no encontrado`, { email: `${emailNormalized.substring(0, 10)}...` });
       return res.status(401).json({
         success: false,
         message: 'Credenciales inválidas'
       });
     }
 
+    logger.info(`[${requestId}] Usuario encontrado`, { 
+      userId: user.id,
+      isActive: user.isActive,
+      emailMatch: user.email === emailNormalized ? 'exacto' : 'diferente'
+    });
+
     if (!user.isActive) {
+      logger.warn(`[${requestId}] Usuario desactivado`, { userId: user.id });
       return res.status(403).json({
         success: false,
         message: 'Usuario desactivado'
       });
     }
 
-    // Verificar contraseña
+    // Verificar contraseña con bcrypt.compare
+    logger.info(`[${requestId}] Verificando contraseña`);
     const isValidPassword = await bcrypt.compare(password, user.password);
+    
     if (!isValidPassword) {
+      logger.warn(`[${requestId}] Contraseña incorrecta`, { 
+        userId: user.id,
+        passwordLength: password.length,
+        hashPrefix: user.password.substring(0, 10)
+      });
       return res.status(401).json({
         success: false,
         message: 'Credenciales inválidas'
       });
     }
 
+    logger.info(`[${requestId}] Contraseña verificada correctamente`);
+
     // Generar tokens
+    logger.info(`[${requestId}] Generando tokens JWT`);
     const tokens = generateTokens(user.id);
 
     // Guardar refresh token en la base de datos
@@ -285,6 +324,13 @@ const login = async (req, res, next) => {
     // Remover password de la respuesta
     const { password: _, ...userWithoutPassword } = user;
 
+    const duration = Date.now() - startTime;
+    logger.info(`[${requestId}] Login exitoso`, { 
+      userId: user.id,
+      role: user.role,
+      duration: `${duration}ms`
+    });
+
     res.status(200).json({
       success: true,
       message: 'Login exitoso',
@@ -294,6 +340,23 @@ const login = async (req, res, next) => {
       }
     });
   } catch (error) {
+    const duration = Date.now() - startTime;
+    
+    logger.error(`[${requestId}] Error en login`, {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      duration: `${duration}ms`
+    });
+
+    // Manejar errores específicos de bcrypt
+    if (error.message.includes('bcrypt') || error.message.includes('hash') || error.message.includes('salt')) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error en verificación de contraseña'
+      });
+    }
+
     next(error);
   }
 };
