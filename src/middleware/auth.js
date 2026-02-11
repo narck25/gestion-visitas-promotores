@@ -139,7 +139,7 @@ const validateTokenExpirations = () => {
 /**
  * Middleware para generar tokens con validación robusta
  */
-const generateTokens = (userId) => {
+const generateTokens = (user) => {
   // Validar variables de entorno críticas
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === '') {
     throw new Error('JWT_SECRET no está configurado');
@@ -149,19 +149,24 @@ const generateTokens = (userId) => {
     throw new Error('REFRESH_TOKEN_SECRET no está configurado');
   }
   
-  // Obtener valores validados para expiración
+  // Obtener valores validadas para expiración
   const { accessTokenExpiresIn, refreshTokenExpiresIn } = validateTokenExpirations();
   
-  // Generar access token
+  // Generar access token con información del usuario
   const accessToken = jwt.sign(
-    { userId },
+    { 
+      userId: user.id,
+      role: user.role,
+      name: user.name,
+      email: user.email
+    },
     process.env.JWT_SECRET,
     { expiresIn: accessTokenExpiresIn }
   );
 
-  // Generar refresh token
+  // Generar refresh token (solo necesita userId)
   const refreshToken = jwt.sign(
-    { userId },
+    { userId: user.id },
     process.env.REFRESH_TOKEN_SECRET,
     { expiresIn: refreshTokenExpiresIn }
   );

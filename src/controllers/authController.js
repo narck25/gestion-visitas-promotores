@@ -102,7 +102,7 @@ const register = async (req, res, next) => {
 
     // Generar tokens
     logger.info(`[${requestId}] Generando tokens JWT`);
-    const tokens = generateTokens(user.id);
+    const tokens = generateTokens(user);
 
     // Guardar refresh token en la base de datos
     await prisma.refreshToken.create({
@@ -310,7 +310,7 @@ const login = async (req, res, next) => {
 
     // Generar tokens
     logger.info(`[${requestId}] Generando tokens JWT`);
-    const tokens = generateTokens(user.id);
+    const tokens = generateTokens(user);
 
     // Guardar refresh token en la base de datos
     await prisma.refreshToken.create({
@@ -408,7 +408,7 @@ const refreshToken = async (req, res, next) => {
     }
 
     // Generar nuevos tokens
-    const newTokens = generateTokens(tokenRecord.user.id);
+    const newTokens = generateTokens(tokenRecord.user);
 
     // Eliminar refresh token antiguo
     await prisma.refreshToken.delete({

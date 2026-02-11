@@ -92,7 +92,7 @@ export function getUserInfo(): { username: string; name: string; role: string } 
     const decoded = JSON.parse(atob(payload));
     
     return {
-      username: decoded.username || '',
+      username: decoded.email || '',
       name: decoded.name || '',
       role: decoded.role || 'user',
     };
