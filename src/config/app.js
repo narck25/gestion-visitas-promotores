@@ -2,11 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
-const { errorHandler, notFoundHandler } = require('../middleware/errorHandler');
-const logger = require('./logger');
+const { errorHandler, notFoundHandler } = require('../errors/AppError');
+const { createLogger, http: httpLogger } = require('../utils/logger');
+const { rateLimitMiddleware, rateLimitMetrics } = require('../middleware/rateLimit/rateLimiter');
+
+const logger = createLogger({ module: 'app' });
 
 // Función para verificar estado de directorios de Coolify
 const checkCoolifyDirectories = () => {
@@ -64,17 +66,8 @@ const adminRoutes = require('../routes/adminRoutes');
 const clientRoutes = require('../routes/clientRoutes');
 const supervisorRoutes = require('../routes/supervisorRoutes');
 
-// Configuración de rate limiting
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutos
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // límite por IP
-  message: {
-    success: false,
-    message: 'Demasiadas solicitudes desde esta IP, por favor intente más tarde'
-  },
-  standardHeaders: true,
-  legacyHeaders: false
-});
+// Configuración de rate limiting (usando el nuevo sistema)
+const limiter = rateLimitMiddleware.api;
 
 // Crear aplicación Express
 const app = express();
@@ -129,12 +122,24 @@ app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Logging en desarrollo
+// Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
   // En producción, usar nuestro logger estructurado
-  app.use(logger.httpLogger);
+  app.use((req, res, next) => {
+    const startTime = Date.now();
+    
+    // Interceptar respuesta para registrar métricas
+    const originalSend = res.send;
+    res.send = function(body) {
+      const duration = Date.now() - startTime;
+      httpLogger(req, res, duration);
+      return originalSend.call(this, body);
+    };
+    
+    next();
+  });
 }
 
 // Aplicar rate limiting a todas las rutas
