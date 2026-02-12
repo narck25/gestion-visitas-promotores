@@ -84,7 +84,7 @@ const register = async (req, res, next) => {
         email: email.trim().toLowerCase(), // Guardar en minúsculas para consistencia
         password: hashedPassword,
         name: name.trim(),
-        role: (role && ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'PROMOTER', 'VIEWER'].includes(role)) 
+        role: (role && ['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'VIEWER'].includes(role)) 
           ? role 
           : 'PROMOTER',
         isActive: true, // Valor por defecto según esquema

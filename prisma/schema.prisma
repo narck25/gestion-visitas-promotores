@@ -7,16 +7,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  SUPER_ADMIN
-  ADMIN
-  MANAGER
-  PROMOTER
-  VIEWER
-}
-
 model User {
-  id            String         @id @default(uuid())
+  id            String         @id @default(dbgenerated("uuid_generate_v4()"))
   email         String         @unique
   password      String
   name          String
@@ -24,61 +16,131 @@ model User {
   avatar        String?
   role          Role           @default(PROMOTER)
   isActive      Boolean        @default(true)
-  createdAt     DateTime       @default(now()) @db.Timestamp(6)
-  updatedAt     DateTime       @updatedAt @db.Timestamp(6)
+  lastLoginAt   DateTime?
+  supervisorId  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  clients       Client[]
   refreshTokens RefreshToken[]
   visits        Visit[]
+  supervisor    User?          @relation("SupervisorPromoters", fields: [supervisorId], references: [id])
+  promoters     User[]         @relation("SupervisorPromoters")
 
-  @@index([email], map: "idx_user_email")
-  @@index([role], map: "User_role_idx")
-  @@index([isActive], map: "User_isActive_idx")
-  @@index([createdAt], map: "User_createdAt_idx")
+  @@index([role])
+  @@index([isActive])
+  @@index([createdAt])
+  @@index([email])
+  @@index([supervisorId])
 }
 
 model Client {
-  id           String   @id @default(dbgenerated("gen_random_uuid()"))
+  id           String        @id @default(dbgenerated("uuid_generate_v4()"))
   name         String
+  businessName String?
   phone        String?
   email        String?
   address      String?
-  businessType String?
+  city         String?
+  state        String?
+  country      String?       @default("México")
+  postalCode   String?
+  businessType BusinessType?
+  category     String?
   notes        String?
-  createdAt    DateTime @default(now()) @db.Timestamp(6)
-  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamp(6)
+  promoterId   String?
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  promoter     User?         @relation(fields: [promoterId], references: [id])
   visits       Visit[]
+
+  @@index([businessName])
+  @@index([businessType])
+  @@index([createdAt])
+  @@index([isActive])
+  @@index([name])
+  @@index([promoterId])
 }
 
 model Visit {
-  id         String   @id @default(dbgenerated("gen_random_uuid()"))
-  promoterId String
-  clientId   String
-  date       DateTime @default(now()) @db.Timestamp(6)
-  latitude   Float?
-  longitude  Float?
-  address    String?
-  notes      String
-  status     String   @default("COMPLETED")
-  photos     String[] @default([])
-  signature  String?
-  createdAt  DateTime @default(now()) @db.Timestamp(6)
-  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamp(6)
-  client     Client   @relation(fields: [clientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  promoter   User     @relation(fields: [promoterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id            String       @id @default(dbgenerated("uuid_generate_v4()"))
+  promoterId    String
+  clientId      String
+  date          DateTime     @default(now())
+  scheduledDate DateTime?
+  duration      Int?
+  latitude      Float?
+  longitude     Float?
+  address       String?
+  accuracy      Float?
+  status        VisitStatus  @default(COMPLETED)
+  purpose       VisitPurpose @default(SALES)
+  notes         String
+  rating        Int?         @default(5)
+  beforePhotos  String[]
+  afterPhotos   String[]
+  signature     String?
+  signedAt      DateTime?
+  isSynced      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  client        Client       @relation(fields: [clientId], references: [id])
+  promoter      User         @relation(fields: [promoterId], references: [id])
 
-  @@index([clientId], map: "idx_visit_client_id")
-  @@index([date], map: "idx_visit_date")
-  @@index([promoterId], map: "idx_visit_promoter_id")
-  @@index([status], map: "idx_visit_status")
+  @@index([clientId])
+  @@index([createdAt])
+  @@index([date])
+  @@index([isSynced])
+  @@index([promoterId])
+  @@index([purpose])
+  @@index([status])
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
-  token     String   @unique
-  userId    String
-  expiresAt DateTime @db.Timestamp(6)
-  createdAt DateTime @default(now()) @db.Timestamp(6)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id         String    @id @default(dbgenerated("uuid_generate_v4()"))
+  token      String    @unique
+  userId     String
+  deviceInfo String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([token], map: "idx_refresh_token_token")
-  @@index([userId], map: "idx_refresh_token_user_id")
+  @@index([expiresAt])
+  @@index([token])
+  @@index([userId])
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  SUPERVISOR
+  PROMOTER
+  VIEWER
+}
+
+enum BusinessType {
+  RETAIL
+  WHOLESALE
+  SERVICE
+  MANUFACTURING
+  FOOD
+  OTHER
+}
+
+enum VisitPurpose {
+  SALES
+  FOLLOW_UP
+  DELIVERY
+  TRAINING
+  COMPLAINT
+  OTHER
+}
+
+enum VisitStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
 }

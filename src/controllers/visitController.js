@@ -31,9 +31,17 @@ const createVisit = async (req, res, next) => {
       });
     }
 
-    // Verificar que el cliente existe y pertenece al usuario (excepto para administradores)
+    // Verificar que el cliente existe y pertenece al usuario (excepto para administradores y supervisores)
     const client = await prisma.client.findUnique({
-      where: { id: clientId }
+      where: { id: clientId },
+      include: {
+        promoter: {
+          select: {
+            id: true,
+            supervisorId: true
+          }
+        }
+      }
     });
 
     if (!client) {
@@ -43,11 +51,20 @@ const createVisit = async (req, res, next) => {
       });
     }
 
-    // Validar que el cliente pertenece al usuario (excepto para administradores)
+    // Validar que el cliente pertenece al usuario (excepto para administradores y supervisores)
     const userRole = req.user.role;
-    const isAdmin = ['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(userRole);
+    const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(userRole);
+    const isSupervisor = userRole === 'SUPERVISOR';
     
-    if (!isAdmin && client.promoterId !== promoterId) {
+    if (!isAdmin && !isSupervisor && client.promoterId !== promoterId) {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para crear visitas para este cliente'
+      });
+    }
+
+    // Si es supervisor, verificar que el cliente pertenece a uno de sus promotores
+    if (isSupervisor && client.promoter.supervisorId !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'No tienes permisos para crear visitas para este cliente'
@@ -114,14 +131,44 @@ const getVisits = async (req, res, next) => {
 
     // Filtrar por rol de usuario
     // Si el usuario es PROMOTER o VIEWER, solo puede ver sus propias visitas
-    // Si el usuario es ADMIN, SUPER_ADMIN o MANAGER, puede ver todas las visitas
+    // Si el usuario es ADMIN o SUPER_ADMIN, puede ver todas las visitas
+    // Si el usuario es SUPERVISOR, puede ver visitas de sus promotores
     if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
       where.promoterId = userId;
-    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN' || userRole === 'MANAGER') {
+    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
       // Los administradores pueden ver todas las visitas
       // Si se proporciona un promoterId específico, filtrar por ese promotor
       if (filterPromoterId) {
         where.promoterId = filterPromoterId;
+      }
+    } else if (userRole === 'SUPERVISOR') {
+      // Los supervisores pueden ver visitas de sus promotores
+      const promoterIds = await prisma.user.findMany({
+        where: { supervisorId: userId },
+        select: { id: true }
+      });
+      
+      where.promoterId = {
+        in: promoterIds.map(p => p.id)
+      };
+      
+      // Si se proporciona un promoterId específico, verificar que pertenezca al supervisor
+      if (filterPromoterId) {
+        const promoter = await prisma.user.findFirst({
+          where: { 
+            id: filterPromoterId,
+            supervisorId: userId 
+          }
+        });
+        
+        if (promoter) {
+          where.promoterId = filterPromoterId;
+        } else {
+          return res.status(403).json({
+            success: false,
+            message: 'No tienes permisos para ver visitas de este promotor'
+          });
+        }
       }
     } else {
       // Para otros roles no definidos, por defecto solo sus visitas
@@ -206,11 +253,22 @@ const getVisitById = async (req, res, next) => {
     const where = { id };
 
     // Si el usuario es PROMOTER o VIEWER, solo puede ver sus propias visitas
-    // Si el usuario es ADMIN, SUPER_ADMIN o MANAGER, puede ver cualquier visita
+    // Si el usuario es ADMIN o SUPER_ADMIN, puede ver cualquier visita
+    // Si el usuario es SUPERVISOR, puede ver visitas de sus promotores
     if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
       where.promoterId = userId;
+    } else if (userRole === 'SUPERVISOR') {
+      // Los supervisores pueden ver visitas de sus promotores
+      const promoterIds = await prisma.user.findMany({
+        where: { supervisorId: userId },
+        select: { id: true }
+      });
+      
+      where.promoterId = {
+        in: promoterIds.map(p => p.id)
+      };
     }
-    // Para ADMIN, SUPER_ADMIN y MANAGER no se agrega filtro de promoterId
+    // Para ADMIN y SUPER_ADMIN no se agrega filtro de promoterId
 
     const visit = await prisma.visit.findFirst({
       where,
@@ -280,11 +338,22 @@ const updateVisit = async (req, res, next) => {
     const where = { id };
 
     // Si el usuario es PROMOTER o VIEWER, solo puede actualizar sus propias visitas
-    // Si el usuario es ADMIN, SUPER_ADMIN o MANAGER, puede actualizar cualquier visita
+    // Si el usuario es ADMIN o SUPER_ADMIN, puede actualizar cualquier visita
+    // Si el usuario es SUPERVISOR, puede actualizar visitas de sus promotores
     if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
       where.promoterId = userId;
+    } else if (userRole === 'SUPERVISOR') {
+      // Los supervisores pueden actualizar visitas de sus promotores
+      const promoterIds = await prisma.user.findMany({
+        where: { supervisorId: userId },
+        select: { id: true }
+      });
+      
+      where.promoterId = {
+        in: promoterIds.map(p => p.id)
+      };
     }
-    // Para ADMIN, SUPER_ADMIN y MANAGER no se agrega filtro de promoterId
+    // Para ADMIN y SUPER_ADMIN no se agrega filtro de promoterId
 
     // Verificar que la visita existe y el usuario tiene permisos
     const existingVisit = await prisma.visit.findFirst({
@@ -365,11 +434,22 @@ const deleteVisit = async (req, res, next) => {
     const where = { id };
 
     // Si el usuario es PROMOTER o VIEWER, solo puede eliminar sus propias visitas
-    // Si el usuario es ADMIN, SUPER_ADMIN o MANAGER, puede eliminar cualquier visita
+    // Si el usuario es ADMIN o SUPER_ADMIN, puede eliminar cualquier visita
+    // Si el usuario es SUPERVISOR, puede eliminar visitas de sus promotores
     if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
       where.promoterId = userId;
+    } else if (userRole === 'SUPERVISOR') {
+      // Los supervisores pueden eliminar visitas de sus promotores
+      const promoterIds = await prisma.user.findMany({
+        where: { supervisorId: userId },
+        select: { id: true }
+      });
+      
+      where.promoterId = {
+        in: promoterIds.map(p => p.id)
+      };
     }
-    // Para ADMIN, SUPER_ADMIN y MANAGER no se agrega filtro de promoterId
+    // Para ADMIN y SUPER_ADMIN no se agrega filtro de promoterId
 
     // Verificar que la visita existe y el usuario tiene permisos
     const existingVisit = await prisma.visit.findFirst({
@@ -411,14 +491,44 @@ const getVisitStats = async (req, res, next) => {
 
     // Filtrar por rol de usuario
     // Si el usuario es PROMOTER o VIEWER, solo puede ver sus propias estadísticas
-    // Si el usuario es ADMIN, SUPER_ADMIN o MANAGER, puede ver estadísticas de cualquier promotor
+    // Si el usuario es ADMIN o SUPER_ADMIN, puede ver estadísticas de cualquier promotor
+    // Si el usuario es SUPERVISOR, puede ver estadísticas de sus promotores
     if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
       where.promoterId = userId;
-    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN' || userRole === 'MANAGER') {
+    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
       // Los administradores pueden ver estadísticas de cualquier promotor
       // Si se proporciona un promoterId específico, filtrar por ese promotor
       if (filterPromoterId) {
         where.promoterId = filterPromoterId;
+      }
+    } else if (userRole === 'SUPERVISOR') {
+      // Los supervisores pueden ver estadísticas de sus promotores
+      const promoterIds = await prisma.user.findMany({
+        where: { supervisorId: userId },
+        select: { id: true }
+      });
+      
+      where.promoterId = {
+        in: promoterIds.map(p => p.id)
+      };
+      
+      // Si se proporciona un promoterId específico, verificar que pertenezca al supervisor
+      if (filterPromoterId) {
+        const promoter = await prisma.user.findFirst({
+          where: { 
+            id: filterPromoterId,
+            supervisorId: userId 
+          }
+        });
+        
+        if (promoter) {
+          where.promoterId = filterPromoterId;
+        } else {
+          return res.status(403).json({
+            success: false,
+            message: 'No tienes permisos para ver estadísticas de este promotor'
+          });
+        }
       }
     } else {
       // Para otros roles no definidos, por defecto solo sus estadísticas
