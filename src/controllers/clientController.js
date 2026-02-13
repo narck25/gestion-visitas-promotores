@@ -1,6 +1,23 @@
 const prisma = require('../config/database');
 
 /**
+ * Helper functions for standardized responses
+ */
+function successResponse(res, data, status = 200) {
+  return res.status(status).json({
+    success: true,
+    data
+  });
+}
+
+function errorResponse(res, message, status = 500) {
+  return res.status(status).json({
+    success: false,
+    error: message
+  });
+}
+
+/**
  * Controlador para obtener todos los clientes con filtros por rol
  */
 const getAllClients = async (req, res, next) => {
@@ -59,10 +76,7 @@ const getAllClients = async (req, res, next) => {
             where.promoterId = filterPromoterId;
             delete where.OR; // Eliminar el OR ya que ahora solo queremos este promotor específico
           } else {
-            return res.status(403).json({
-              success: false,
-              message: 'No tienes permisos para ver clientes de este promotor'
-            });
+            return errorResponse(res, 'No tienes permisos para ver clientes de este promotor', 403);
           }
         }
       }
@@ -131,18 +145,15 @@ const getAllClients = async (req, res, next) => {
 
     const totalPages = Math.ceil(total / take);
 
-    res.status(200).json({
-      success: true,
-      data: {
-        clients,
-        pagination: {
-          page: parseInt(page),
-          limit: take,
-          total,
-          totalPages,
-          hasNextPage: page < totalPages,
-          hasPrevPage: page > 1
-        }
+    return successResponse(res, {
+      clients,
+      pagination: {
+        page: parseInt(page),
+        limit: take,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
       }
     });
   } catch (error) {
@@ -161,10 +172,7 @@ const createClient = async (req, res, next) => {
 
     // Validar campos requeridos
     if (!name) {
-      return res.status(400).json({
-        success: false,
-        message: 'El nombre del cliente es requerido'
-      });
+      return errorResponse(res, 'El nombre del cliente es requerido', 400);
     }
 
     // Determinar el promoterId para el cliente
@@ -179,26 +187,17 @@ const createClient = async (req, res, next) => {
       });
 
       if (!promoter) {
-        return res.status(404).json({
-          success: false,
-          message: 'Promotor no encontrado'
-        });
+        return errorResponse(res, 'Promotor no encontrado', 404);
       }
 
       // Verificar que el promotor tenga rol PROMOTER
       if (promoter.role !== 'PROMOTER') {
-        return res.status(400).json({
-          success: false,
-          message: 'El usuario asignado debe tener rol PROMOTER'
-        });
+        return errorResponse(res, 'El usuario asignado debe tener rol PROMOTER', 400);
       }
 
       // Si el usuario es SUPERVISOR, verificar que el promotor pertenezca a él
       if (userRole === 'SUPERVISOR' && promoter.supervisorId !== userId) {
-        return res.status(403).json({
-          success: false,
-          message: 'No tienes permisos para asignar clientes a este promotor'
-        });
+        return errorResponse(res, 'No tienes permisos para asignar clientes a este promotor', 403);
       }
 
       promoterId = req.body.promoterId;
@@ -226,11 +225,7 @@ const createClient = async (req, res, next) => {
       }
     });
 
-    res.status(201).json({
-      success: true,
-      message: 'Cliente creado exitosamente',
-      data: { client }
-    });
+    return successResponse(res, { client }, 201);
   } catch (error) {
     next(error);
   }
@@ -363,10 +358,7 @@ const updateClient = async (req, res, next) => {
     });
 
     if (!existingClient) {
-      return res.status(404).json({
-        success: false,
-        message: 'Cliente no encontrado'
-      });
+      return errorResponse(res, 'Cliente no encontrado', 404);
     }
 
     // Preparar datos para actualizar
@@ -388,26 +380,17 @@ const updateClient = async (req, res, next) => {
       });
 
       if (!promoter) {
-        return res.status(404).json({
-          success: false,
-          message: 'Promotor no encontrado'
-        });
+        return errorResponse(res, 'Promotor no encontrado', 404);
       }
 
       // Verificar que el promotor tenga rol PROMOTER
       if (promoter.role !== 'PROMOTER') {
-        return res.status(400).json({
-          success: false,
-          message: 'El usuario asignado debe tener rol PROMOTER'
-        });
+        return errorResponse(res, 'El usuario asignado debe tener rol PROMOTER', 400);
       }
 
       // Si el usuario es SUPERVISOR, verificar que el promotor pertenezca a él
       if (userRole === 'SUPERVISOR' && promoter.supervisorId !== userId) {
-        return res.status(403).json({
-          success: false,
-          message: 'No tienes permisos para asignar clientes a este promotor'
-        });
+        return errorResponse(res, 'No tienes permisos para asignar clientes a este promotor', 403);
       }
 
       updateData.promoterId = newPromoterId;
@@ -428,11 +411,7 @@ const updateClient = async (req, res, next) => {
       }
     });
 
-    res.status(200).json({
-      success: true,
-      message: 'Cliente actualizado exitosamente',
-      data: { client: updatedClient }
-    });
+    return successResponse(res, { client: updatedClient });
   } catch (error) {
     next(error);
   }
@@ -474,10 +453,7 @@ const deleteClient = async (req, res, next) => {
     });
 
     if (!existingClient) {
-      return res.status(404).json({
-        success: false,
-        message: 'Cliente no encontrado'
-      });
+      return errorResponse(res, 'Cliente no encontrado', 404);
     }
 
     // Eliminar cliente (las visitas se eliminarán en cascada)
@@ -485,10 +461,7 @@ const deleteClient = async (req, res, next) => {
       where: { id }
     });
 
-    res.status(200).json({
-      success: true,
-      message: 'Cliente eliminado exitosamente'
-    });
+    return successResponse(res, { message: 'Cliente eliminado exitosamente' });
   } catch (error) {
     next(error);
   }
