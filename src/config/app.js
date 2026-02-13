@@ -65,6 +65,7 @@ const visitImageRoutes = require('../routes/visitImageRoutes');
 const adminRoutes = require('../routes/adminRoutes');
 const clientRoutes = require('../routes/clientRoutes');
 const supervisorRoutes = require('../routes/supervisorRoutes');
+const usersRoutes = require('../routes/usersRoutes');
 
 // Configuración de rate limiting (usando el nuevo sistema)
 const limiter = rateLimitMiddleware.api;
@@ -247,6 +248,7 @@ app.use('/api/visits/images', visitImageRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/supervisor', supervisorRoutes);
+app.use('/api/users', usersRoutes);
 
 // Ruta raíz
 app.get('/', (req, res) => {
@@ -261,6 +263,7 @@ app.get('/', (req, res) => {
       admin: '/api/admin',
       clients: '/api/clients',
       supervisor: '/api/supervisor',
+      users: '/api/users',
       health: '/health',
       uploads: '/uploads'
     }
