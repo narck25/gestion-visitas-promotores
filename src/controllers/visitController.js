@@ -51,23 +51,33 @@ const createVisit = async (req, res, next) => {
       });
     }
 
-    // Validar que el cliente pertenece al usuario (excepto para administradores y supervisores)
+    // Validar permisos por rol según las reglas de negocio
     const userRole = req.user.role;
-    const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(userRole);
-    const isSupervisor = userRole === 'SUPERVISOR';
     
-    if (!isAdmin && !isSupervisor && client.promoterId !== promoterId) {
+    if (userRole === 'PROMOTER') {
+      // PROMOTER: Solo puede crear visita si client.promoterId = user.id
+      if (client.promoterId !== promoterId) {
+        return res.status(403).json({
+          success: false,
+          message: 'No tienes permisos para crear visitas para este cliente'
+        });
+      }
+    } else if (userRole === 'SUPERVISOR') {
+      // SUPERVISOR: Solo puede crear visita si client.promoter.supervisorId = user.id
+      if (!client.promoter || client.promoter.supervisorId !== req.user.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'No tienes permisos para crear visitas para este cliente'
+        });
+      }
+    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
+      // ADMIN y SUPER_ADMIN: Sin restricción
+      // No se requiere validación adicional
+    } else {
+      // Para otros roles (incluyendo VIEWER), no permitir crear visitas
       return res.status(403).json({
         success: false,
-        message: 'No tienes permisos para crear visitas para este cliente'
-      });
-    }
-
-    // Si es supervisor, verificar que el cliente pertenece a uno de sus promotores
-    if (isSupervisor && client.promoter.supervisorId !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'No tienes permisos para crear visitas para este cliente'
+        message: 'No tienes permisos para crear visitas'
       });
     }
 
@@ -129,20 +139,12 @@ const getVisits = async (req, res, next) => {
     // Construir filtros base
     const where = {};
 
-    // Filtrar por rol de usuario
-    // Si el usuario es PROMOTER o VIEWER, solo puede ver sus propias visitas
-    // Si el usuario es ADMIN o SUPER_ADMIN, puede ver todas las visitas
-    // Si el usuario es SUPERVISOR, puede ver visitas de sus promotores
-    if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
+    // Filtrar por rol de usuario según las reglas de negocio
+    if (userRole === 'PROMOTER') {
+      // PROMOTER → solo visitas donde promoterId = user.id
       where.promoterId = userId;
-    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
-      // Los administradores pueden ver todas las visitas
-      // Si se proporciona un promoterId específico, filtrar por ese promotor
-      if (filterPromoterId) {
-        where.promoterId = filterPromoterId;
-      }
-    } else if (userRole === 'SUPERVISOR') {
-      // Los supervisores pueden ver visitas de sus promotores
+    } else if (userRole === 'SUPERVISOR' || userRole === 'VIEWER') {
+      // SUPERVISOR y VIEWER → visitas donde promoter.supervisorId = user.id
       const promoterIds = await prisma.user.findMany({
         where: { supervisorId: userId },
         select: { id: true }
@@ -153,7 +155,7 @@ const getVisits = async (req, res, next) => {
       };
       
       // Si se proporciona un promoterId específico, verificar que pertenezca al supervisor
-      if (filterPromoterId) {
+      if (filterPromoterId && userRole === 'SUPERVISOR') {
         const promoter = await prisma.user.findFirst({
           where: { 
             id: filterPromoterId,
@@ -169,6 +171,12 @@ const getVisits = async (req, res, next) => {
             message: 'No tienes permisos para ver visitas de este promotor'
           });
         }
+      }
+    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
+      // ADMIN y SUPER_ADMIN → todas las visitas
+      // Si se proporciona un promoterId específico, filtrar por ese promotor
+      if (filterPromoterId) {
+        where.promoterId = filterPromoterId;
       }
     } else {
       // Para otros roles no definidos, por defecto solo sus visitas
@@ -203,15 +211,13 @@ const getVisits = async (req, res, next) => {
           client: {
             select: {
               id: true,
-              name: true,
-              phone: true
+              name: true
             }
           },
           promoter: {
             select: {
               id: true,
-              name: true,
-              email: true
+              name: true
             }
           }
         }
@@ -249,29 +255,9 @@ const getVisitById = async (req, res, next) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    // Construir filtro según el rol del usuario
-    const where = { id };
-
-    // Si el usuario es PROMOTER o VIEWER, solo puede ver sus propias visitas
-    // Si el usuario es ADMIN o SUPER_ADMIN, puede ver cualquier visita
-    // Si el usuario es SUPERVISOR, puede ver visitas de sus promotores
-    if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
-      where.promoterId = userId;
-    } else if (userRole === 'SUPERVISOR') {
-      // Los supervisores pueden ver visitas de sus promotores
-      const promoterIds = await prisma.user.findMany({
-        where: { supervisorId: userId },
-        select: { id: true }
-      });
-      
-      where.promoterId = {
-        in: promoterIds.map(p => p.id)
-      };
-    }
-    // Para ADMIN y SUPER_ADMIN no se agrega filtro de promoterId
-
-    const visit = await prisma.visit.findFirst({
-      where,
+    // Obtener la visita primero sin filtros de rol
+    const visit = await prisma.visit.findUnique({
+      where: { id },
       include: {
         client: {
           select: {
@@ -287,7 +273,8 @@ const getVisitById = async (req, res, next) => {
           select: {
             id: true,
             name: true,
-            email: true
+            email: true,
+            supervisorId: true
           }
         }
       }
@@ -297,6 +284,34 @@ const getVisitById = async (req, res, next) => {
       return res.status(404).json({
         success: false,
         message: 'Visita no encontrada'
+      });
+    }
+
+    // Validar acceso por rol
+    if (userRole === 'PROMOTER') {
+      // PROMOTER: Solo puede acceder si la visita pertenece a él
+      if (visit.promoterId !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'No tienes permisos para acceder a esta visita'
+        });
+      }
+    } else if (userRole === 'SUPERVISOR') {
+      // SUPERVISOR: Solo puede acceder si el promoter.supervisorId = user.id
+      if (!visit.promoter || visit.promoter.supervisorId !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'No tienes permisos para acceder a esta visita'
+        });
+      }
+    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
+      // ADMIN y SUPER_ADMIN: Pueden acceder siempre
+      // No se requiere validación adicional
+    } else {
+      // Para otros roles (incluyendo VIEWER), no permitir acceso
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para acceder a esta visita'
       });
     }
 

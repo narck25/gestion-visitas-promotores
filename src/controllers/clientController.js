@@ -15,20 +15,69 @@ const getAllClients = async (req, res, next) => {
     // Construir filtros base
     const where = {};
 
-    // Filtrar por rol de usuario
-    // Si el usuario es PROMOTER, solo puede ver sus propios clientes
-    // Si el usuario es ADMIN o SUPER_ADMIN, puede ver todos los clientes
-    // Si el usuario es SUPERVISOR, puede ver clientes de sus promotores
-    if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
+    // Filtrar por rol de usuario según las reglas de negocio
+    if (userRole === 'PROMOTER') {
+      // PROMOTER → solo clientes donde promoterId = user.id
       where.promoterId = userId;
+    } else if (userRole === 'SUPERVISOR') {
+      // SUPERVISOR → clientes:
+      // a) donde promoter.supervisorId = user.id
+      // b) o clientes sin asignar (promoterId = null)
+      const promoterIds = await prisma.user.findMany({
+        where: { supervisorId: userId },
+        select: { id: true }
+      });
+      
+      const promoterIdList = promoterIds.map(p => p.id);
+      
+      where.OR = [
+        {
+          promoterId: {
+            in: promoterIdList
+          }
+        },
+        {
+          promoterId: null
+        }
+      ];
+      
+      // Si se proporciona un promoterId específico, verificar que pertenezca al supervisor
+      if (filterPromoterId) {
+        if (filterPromoterId === 'null') {
+          // Si se solicita ver clientes sin asignar
+          where.promoterId = null;
+          delete where.OR; // Eliminar el OR ya que ahora solo queremos null
+        } else {
+          const promoter = await prisma.user.findFirst({
+            where: { 
+              id: filterPromoterId,
+              supervisorId: userId 
+            }
+          });
+          
+          if (promoter) {
+            where.promoterId = filterPromoterId;
+            delete where.OR; // Eliminar el OR ya que ahora solo queremos este promotor específico
+          } else {
+            return res.status(403).json({
+              success: false,
+              message: 'No tienes permisos para ver clientes de este promotor'
+            });
+          }
+        }
+      }
     } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
-      // Los administradores pueden ver todos los clientes
+      // ADMIN y SUPER_ADMIN → todos los clientes
       // Si se proporciona un promoterId específico, filtrar por ese promotor
       if (filterPromoterId) {
-        where.promoterId = filterPromoterId;
+        if (filterPromoterId === 'null') {
+          where.promoterId = null;
+        } else {
+          where.promoterId = filterPromoterId;
+        }
       }
-    } else if (userRole === 'SUPERVISOR') {
-      // Los supervisores pueden ver clientes de sus promotores
+    } else if (userRole === 'VIEWER') {
+      // VIEWER → solo clientes donde promoter.supervisorId = user.id
       const promoterIds = await prisma.user.findMany({
         where: { supervisorId: userId },
         select: { id: true }
@@ -37,25 +86,6 @@ const getAllClients = async (req, res, next) => {
       where.promoterId = {
         in: promoterIds.map(p => p.id)
       };
-      
-      // Si se proporciona un promoterId específico, verificar que pertenezca al supervisor
-      if (filterPromoterId) {
-        const promoter = await prisma.user.findFirst({
-          where: { 
-            id: filterPromoterId,
-            supervisorId: userId 
-          }
-        });
-        
-        if (promoter) {
-          where.promoterId = filterPromoterId;
-        } else {
-          return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para ver clientes de este promotor'
-          });
-        }
-      }
     } else {
       // Para otros roles no definidos, por defecto solo sus clientes
       where.promoterId = userId;
@@ -63,12 +93,13 @@ const getAllClients = async (req, res, next) => {
 
     // Filtro de búsqueda
     if (search) {
-      where.OR = [
+      where.OR = where.OR || [];
+      where.OR.push(
         { name: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
         { phone: { contains: search, mode: 'insensitive' } },
         { businessType: { contains: search, mode: 'insensitive' } }
-      ];
+      );
     }
 
     // Obtener clientes con paginación
@@ -214,35 +245,16 @@ const getClientById = async (req, res, next) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    // Construir filtro según el rol del usuario
-    const where = { id };
-
-    // Si el usuario es PROMOTER o VIEWER, solo puede ver sus propios clientes
-    // Si el usuario es ADMIN o SUPER_ADMIN, puede ver cualquier cliente
-    // Si el usuario es SUPERVISOR, puede ver clientes de sus promotores
-    if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
-      where.promoterId = userId;
-    } else if (userRole === 'SUPERVISOR') {
-      // Los supervisores pueden ver clientes de sus promotores
-      const promoterIds = await prisma.user.findMany({
-        where: { supervisorId: userId },
-        select: { id: true }
-      });
-      
-      where.promoterId = {
-        in: promoterIds.map(p => p.id)
-      };
-    }
-    // Para ADMIN y SUPER_ADMIN no se agrega filtro de promoterId
-
-    const client = await prisma.client.findFirst({
-      where,
+    // Obtener el cliente primero sin filtros de rol
+    const client = await prisma.client.findUnique({
+      where: { id },
       include: {
         promoter: {
           select: {
             id: true,
             name: true,
-            email: true
+            email: true,
+            supervisorId: true
           }
         },
         visits: {
@@ -269,6 +281,39 @@ const getClientById = async (req, res, next) => {
       return res.status(404).json({
         success: false,
         message: 'Cliente no encontrado'
+      });
+    }
+
+    // Validar acceso por rol
+    if (userRole === 'PROMOTER') {
+      // PROMOTER: Solo puede acceder si el cliente pertenece a él
+      if (client.promoterId !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'No tienes permisos para acceder a este cliente'
+        });
+      }
+    } else if (userRole === 'SUPERVISOR') {
+      // SUPERVISOR: Solo puede acceder si el promoter.supervisorId = user.id
+      // o si el cliente no tiene promotor asignado
+      if (client.promoterId) {
+        // Si tiene promotor, verificar que el supervisor sea su supervisor
+        if (!client.promoter || client.promoter.supervisorId !== userId) {
+          return res.status(403).json({
+            success: false,
+            message: 'No tienes permisos para acceder a este cliente'
+          });
+        }
+      }
+      // Si no tiene promotor (promoterId = null), el supervisor puede acceder
+    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
+      // ADMIN y SUPER_ADMIN: Pueden acceder siempre
+      // No se requiere validación adicional
+    } else {
+      // Para otros roles (incluyendo VIEWER), no permitir acceso
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para acceder a este cliente'
       });
     }
 
@@ -554,11 +599,108 @@ const getClientStats = async (req, res, next) => {
   }
 };
 
+/**
+ * Controlador para asignar un cliente a un promotor
+ * PATCH /api/clients/:id/assign
+ * Solo permitido para ADMIN y SUPERVISOR
+ */
+const assignClientToPromoter = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { promoterId } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    // Validar que solo ADMIN y SUPERVISOR pueden usar este endpoint
+    if (userRole !== 'ADMIN' && userRole !== 'SUPER_ADMIN' && userRole !== 'SUPERVISOR') {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para asignar clientes a promotores'
+      });
+    }
+
+    // Validar que se proporcionó promoterId
+    if (!promoterId) {
+      return res.status(400).json({
+        success: false,
+        message: 'El ID del promotor es requerido'
+      });
+    }
+
+    // 1. Validar que el cliente exista
+    const client = await prisma.client.findUnique({
+      where: { id }
+    });
+
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: 'Cliente no encontrado'
+      });
+    }
+
+    // 2. Validar que el promotor exista y tenga role = PROMOTER
+    const promoter = await prisma.user.findUnique({
+      where: { id: promoterId },
+      select: { id: true, role: true, supervisorId: true }
+    });
+
+    if (!promoter) {
+      return res.status(404).json({
+        success: false,
+        message: 'Promotor no encontrado'
+      });
+    }
+
+    if (promoter.role !== 'PROMOTER') {
+      return res.status(400).json({
+        success: false,
+        message: 'El usuario asignado debe tener rol PROMOTER'
+      });
+    }
+
+    // 3. Si el usuario es SUPERVISOR, verificar que promoter.supervisorId = user.id
+    if (userRole === 'SUPERVISOR' && promoter.supervisorId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para asignar clientes a este promotor'
+      });
+    }
+
+    // 4. Actualizar client.promoterId
+    const updatedClient = await prisma.client.update({
+      where: { id },
+      data: {
+        promoterId
+      },
+      include: {
+        promoter: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    // 5. Retornar cliente actualizado con promoter (id, name, email)
+    res.status(200).json({
+      success: true,
+      message: 'Cliente asignado exitosamente al promotor',
+      data: { client: updatedClient }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAllClients,
   createClient,
   getClientById,
   updateClient,
   deleteClient,
-  getClientStats
+  getClientStats,
+  assignClientToPromoter
 };
