@@ -42,51 +42,77 @@ const redisClient = process.env.ENABLE_REDIS_RATE_LIMIT === 'true'
 
 // Configuraciones de rate limiting por tipo de endpoint
 const rateLimitConfigs = {
-  // Rate limiting para autenticación (más restrictivo)
-  auth: {
-    windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 10, // 10 intentos por IP
-    message: 'Demasiados intentos de autenticación. Por favor, intente más tarde.',
+  // Rate limiting para LOGIN - 5 intentos por minuto por IP (Requisito específico)
+  login: {
+    windowMs: 60 * 1000, // 1 minuto
+    max: 5, // 5 intentos por IP (Requisito específico)
+    message: 'Demasiados intentos de inicio de sesión. Por favor, intente más tarde.',
     skipSuccessfulRequests: true, // No contar intentos exitosos
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
-      // Usar IP + ruta para rate limiting de autenticación
-      return `auth:${req.ip}:${req.path}`;
+      // Usar IP real detrás de proxy
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
+      return `login:${clientIp}`;
     },
     handler: (req, res) => {
-      logger.warn('Rate limit exceeded for authentication', {
-        ip: req.ip,
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
+      logger.warn('Rate limit exceeded for login', {
+        ip: clientIp,
         path: req.path,
-        user: req.user?.id,
+        userAgent: req.headers['user-agent'],
       });
       
-      const error = new RateLimitError('Demasiados intentos de autenticación. Por favor, intente más tarde.');
-      res.status(error.statusCode).json(error.toJSON());
+      // Calcular tiempo de espera
+      const retryAfter = Math.ceil(rateLimitConfigs.login.windowMs / 1000);
+      
+      // Headers estándar (Requisito específico)
+      res.setHeader('Retry-After', retryAfter);
+      res.setHeader('X-RateLimit-Limit', rateLimitConfigs.login.max);
+      res.setHeader('X-RateLimit-Remaining', 0);
+      
+      res.status(429).json({
+        success: false,
+        error: 'Demasiados intentos de inicio de sesión. Por favor, intente más tarde.',
+        retryAfter: `${retryAfter} segundos`
+      });
     },
   },
   
-  // Rate limiting para API general (menos restrictivo)
+  // Rate limiting para API general - 100 requests por 15 minutos por IP (Requisito específico)
   api: {
-    windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 100, // 100 solicitudes por IP
+    windowMs: 15 * 60 * 1000, // 15 minutos (Requisito específico)
+    max: 100, // 100 solicitudes por IP (Requisito específico)
     message: 'Demasiadas solicitudes. Por favor, intente más tarde.',
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
-      // Usar IP + ruta para rate limiting general
-      return `api:${req.ip}:${req.path}`;
+      // Usar IP real detrás de proxy
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
+      return `api:${clientIp}`;
     },
     handler: (req, res) => {
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
       logger.warn('Rate limit exceeded for API', {
-        ip: req.ip,
+        ip: clientIp,
         path: req.path,
         method: req.method,
         user: req.user?.id,
       });
       
-      const error = new RateLimitError('Demasiadas solicitudes. Por favor, intente más tarde.');
-      res.status(error.statusCode).json(error.toJSON());
+      // Calcular tiempo de espera
+      const retryAfter = Math.ceil(rateLimitConfigs.api.windowMs / 1000);
+      
+      // Headers estándar (Requisito específico)
+      res.setHeader('Retry-After', retryAfter);
+      res.setHeader('X-RateLimit-Limit', rateLimitConfigs.api.max);
+      res.setHeader('X-RateLimit-Remaining', 0);
+      
+      res.status(429).json({
+        success: false,
+        error: 'Demasiadas solicitudes. Por favor, intente más tarde.',
+        retryAfter: `${retryAfter} segundos`
+      });
     },
   },
   
@@ -98,12 +124,14 @@ const rateLimitConfigs = {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
-      // Usar IP + ruta + método para rate limiting de creación
-      return `create:${req.ip}:${req.path}:${req.method}`;
+      // Usar IP real detrás de proxy
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
+      return `create:${clientIp}:${req.path}:${req.method}`;
     },
     handler: (req, res) => {
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
       logger.warn('Rate limit exceeded for create operations', {
-        ip: req.ip,
+        ip: clientIp,
         path: req.path,
         method: req.method,
         user: req.user?.id,
@@ -122,18 +150,20 @@ const rateLimitConfigs = {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
-      // Usar user ID si está autenticado, de lo contrario usar IP
+      // Usar user ID si está autenticado, de lo contrario usar IP real detrás de proxy
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
       return req.user 
         ? `user:${req.user.id}:${req.path}`
-        : `user:${req.ip}:${req.path}`;
+        : `user:${clientIp}:${req.path}`;
     },
     skip: (req) => {
       // Saltar rate limiting para usuarios admin
       return req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN');
     },
     handler: (req, res) => {
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
       logger.warn('Rate limit exceeded for user', {
-        ip: req.ip,
+        ip: clientIp,
         path: req.path,
         method: req.method,
         user: req.user?.id,
@@ -153,11 +183,14 @@ const rateLimitConfigs = {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
-      return `public:${req.ip}:${req.path}`;
+      // Usar IP real detrás de proxy
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
+      return `public:${clientIp}:${req.path}`;
     },
     handler: (req, res) => {
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
       logger.warn('Rate limit exceeded for public endpoint', {
-        ip: req.ip,
+        ip: clientIp,
         path: req.path,
         method: req.method,
       });
@@ -190,10 +223,10 @@ const createRateLimiter = (configName, customConfig = {}) => {
 
 // Middleware de rate limiting específico para rutas
 const rateLimitMiddleware = {
-  // Rate limiting para autenticación
-  auth: createRateLimiter('auth'),
+  // Rate limiting para LOGIN - 5 intentos por minuto (Requisito específico)
+  login: createRateLimiter('login'),
   
-  // Rate limiting para API general
+  // Rate limiting para API general - 100 requests por 15 minutos (Requisito específico)
   api: createRateLimiter('api'),
   
   // Rate limiting para operaciones de creación

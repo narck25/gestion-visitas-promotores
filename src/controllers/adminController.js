@@ -1,11 +1,15 @@
 const prisma = require('../config/database');
 const logger = require('../config/logger');
+const { requireAdmin, AuthorizationError } = require('../middleware/permissions');
 
 /**
  * Controlador para obtener todos los usuarios (solo admin)
  */
 const getAllUsers = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { page = 1, limit = 20, search = '', role = '' } = req.query;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -77,6 +81,9 @@ const getAllUsers = async (req, res, next) => {
  */
 const getAllClients = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { page = 1, limit = 20, search = '', promoterId = '' } = req.query;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -147,6 +154,9 @@ const getAllClients = async (req, res, next) => {
  */
 const getAllVisits = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { page = 1, limit = 20, search = '', promoterId = '', clientId = '', status = '', purpose = '' } = req.query;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -227,6 +237,9 @@ const getAllVisits = async (req, res, next) => {
  */
 const getSystemStats = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     // Obtener estadísticas en paralelo
     const [
       totalUsers,
@@ -318,6 +331,9 @@ const getSystemStats = async (req, res, next) => {
  */
 const updateUserRole = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { userId } = req.params;
     const { role } = req.body;
 
@@ -390,6 +406,9 @@ const updateUserRole = async (req, res, next) => {
  */
 const toggleUserStatus = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { userId } = req.params;
     const { isActive } = req.body;
 

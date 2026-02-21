@@ -1,12 +1,16 @@
 const prisma = require('../config/database');
 const bcrypt = require('bcryptjs');
 const logger = require('../config/logger');
+const { requireAdmin, AuthorizationError } = require('../middleware/permissions');
 
 /**
  * Controlador para obtener todos los usuarios (solo ADMIN)
  */
 const getAllUsers = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { page = 1, limit = 20, search = '', role = '', isActive = '' } = req.query;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -89,6 +93,9 @@ const getAllUsers = async (req, res, next) => {
  */
 const getUserById = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { id } = req.params;
 
     const user = await prisma.user.findUnique({
@@ -150,6 +157,9 @@ const getUserById = async (req, res, next) => {
  */
 const createUser = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { email, password, name, phone, avatar, role, supervisorId } = req.body;
 
     // Validar campos requeridos
@@ -238,6 +248,9 @@ const createUser = async (req, res, next) => {
  */
 const updateUser = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { id } = req.params;
     const { email, name, phone, avatar, role, supervisorId } = req.body;
 
@@ -346,6 +359,9 @@ const updateUser = async (req, res, next) => {
  */
 const updateUserStatus = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { id } = req.params;
     const { isActive } = req.body;
 
@@ -433,6 +449,9 @@ const updateUserStatus = async (req, res, next) => {
  */
 const deleteUser = async (req, res, next) => {
   try {
+    // Validación de permisos - segunda capa de seguridad
+    requireAdmin(req.user);
+    
     const { id } = req.params;
 
     // Verificar que el usuario existe

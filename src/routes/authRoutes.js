@@ -3,6 +3,7 @@ const router = express.Router();
 const { body } = require('express-validator');
 const authController = require('../controllers/authController');
 const { authenticateToken } = require('../middleware/auth');
+const { rateLimitMiddleware } = require('../middleware/rateLimit/rateLimiter');
 
 // Validaciones para registro
 const registerValidation = [
@@ -41,7 +42,7 @@ router.post('/register', registerValidation, authController.register);
  * @desc    Iniciar sesión
  * @access  Public
  */
-router.post('/login', loginValidation, authController.login);
+router.post('/login', rateLimitMiddleware.login, loginValidation, authController.login);
 
 /**
  * @route   POST /api/auth/refresh-token
