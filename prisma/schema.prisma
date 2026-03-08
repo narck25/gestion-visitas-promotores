@@ -16,15 +16,15 @@ model User {
   avatar        String?
   role          Role           @default(PROMOTER)
   isActive      Boolean        @default(true)
-  lastLoginAt   DateTime?
-  supervisorId  String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+  supervisorId  String?
+  lastLoginAt   DateTime?
   clients       Client[]
   refreshTokens RefreshToken[]
-  visits        Visit[]
   supervisor    User?          @relation("SupervisorPromoters", fields: [supervisorId], references: [id])
   promoters     User[]         @relation("SupervisorPromoters")
+  visits        Visit[]
 
   @@index([role])
   @@index([isActive])
@@ -36,21 +36,21 @@ model User {
 model Client {
   id           String        @id @default(dbgenerated("uuid_generate_v4()"))
   name         String
-  businessName String?
   phone        String?
   email        String?
   address      String?
-  city         String?
-  state        String?
-  country      String?       @default("México")
-  postalCode   String?
-  businessType BusinessType?
-  category     String?
   notes        String?
   promoterId   String?
-  isActive     Boolean       @default(true)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+  businessName String?
+  category     String?
+  city         String?
+  country      String?       @default("México")
+  isActive     Boolean       @default(true)
+  postalCode   String?
+  state        String?
+  businessType BusinessType?
   promoter     User?         @relation(fields: [promoterId], references: [id])
   visits       Visit[]
 
@@ -67,23 +67,23 @@ model Visit {
   promoterId    String
   clientId      String
   date          DateTime     @default(now())
-  scheduledDate DateTime?
-  duration      Int?
   latitude      Float?
   longitude     Float?
   address       String?
-  accuracy      Float?
-  status        VisitStatus  @default(COMPLETED)
-  purpose       VisitPurpose @default(SALES)
   notes         String
-  rating        Int?         @default(5)
-  beforePhotos  String[]
-  afterPhotos   String[]
   signature     String?
-  signedAt      DateTime?
-  isSynced      Boolean      @default(true)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+  accuracy      Float?
+  afterPhotos   String[]
+  beforePhotos  String[]
+  duration      Int?
+  isSynced      Boolean      @default(true)
+  purpose       VisitPurpose @default(SALES)
+  rating        Int?         @default(5)
+  scheduledDate DateTime?
+  signedAt      DateTime?
+  status        VisitStatus  @default(COMPLETED)
   client        Client       @relation(fields: [clientId], references: [id])
   promoter      User         @relation(fields: [promoterId], references: [id])
 
@@ -100,10 +100,10 @@ model RefreshToken {
   id         String    @id @default(dbgenerated("uuid_generate_v4()"))
   token      String    @unique
   userId     String
-  deviceInfo String?
   expiresAt  DateTime
-  revokedAt  DateTime?
   createdAt  DateTime  @default(now())
+  deviceInfo String?
+  revokedAt  DateTime?
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])

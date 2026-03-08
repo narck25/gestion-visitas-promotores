@@ -11,7 +11,8 @@ const createVisitValidation = [
   body('latitude').optional().isFloat(),
   body('longitude').optional().isFloat(),
   body('address').optional().isString(),
-  body('photos').optional().isArray(),
+  body('beforePhotos').optional().isArray(),
+  body('afterPhotos').optional().isArray(),
   body('signature').optional().isString(),
   body('date').optional().isISO8601()
 ];
@@ -20,7 +21,8 @@ const createVisitValidation = [
 const updateVisitValidation = [
   body('notes').optional().isString(),
   body('status').optional().isIn(['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']),
-  body('photos').optional().isArray(),
+  body('beforePhotos').optional().isArray(),
+  body('afterPhotos').optional().isArray(),
   body('signature').optional().isString(),
   body('latitude').optional().isFloat(),
   body('longitude').optional().isFloat(),

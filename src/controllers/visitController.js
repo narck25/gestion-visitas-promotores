@@ -5,7 +5,17 @@ const prisma = require('../config/database');
  */
 const createVisit = async (req, res, next) => {
   try {
-    const { clientId, date, latitude, longitude, address, notes, photos, signature } = req.body;
+    const {
+      clientId,
+      notes,
+      latitude,
+      longitude,
+      address,
+      beforePhotos,
+      afterPhotos,
+      signature,
+      date
+    } = req.body;
     const promoterId = req.user.id;
 
     // Validar campos requeridos
@@ -91,7 +101,8 @@ const createVisit = async (req, res, next) => {
         longitude: longitude ? parseFloat(longitude) : null,
         address: address || null,
         notes,
-        photos: photos || [],
+        beforePhotos: beforePhotos || [],
+        afterPhotos: afterPhotos || [],
         signature: signature || null,
         status: 'COMPLETED'
       },
@@ -332,7 +343,7 @@ const updateVisit = async (req, res, next) => {
     const { id } = req.params;
     const userId = req.user.id;
     const userRole = req.user.role;
-    const { notes, status, photos, signature, latitude, longitude, address } = req.body;
+    const { notes, status, beforePhotos, afterPhotos, signature, latitude, longitude, address } = req.body;
 
     // Validar coordenadas si se proporcionan
     if (latitude && (latitude < -90 || latitude > 90)) {
@@ -386,7 +397,8 @@ const updateVisit = async (req, res, next) => {
     const updateData = {
       notes: notes || existingVisit.notes,
       status: status || existingVisit.status,
-      photos: photos || existingVisit.photos,
+      beforePhotos: beforePhotos !== undefined ? beforePhotos : existingVisit.beforePhotos,
+      afterPhotos: afterPhotos !== undefined ? afterPhotos : existingVisit.afterPhotos,
       signature: signature || existingVisit.signature
     };
 

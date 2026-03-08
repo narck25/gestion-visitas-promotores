@@ -61,7 +61,6 @@ const checkCoolifyDirectories = () => {
 // Importar rutas
 const authRoutes = require('../routes/authRoutes');
 const visitRoutes = require('../routes/visitRoutes');
-const visitImageRoutes = require('../routes/visitImageRoutes');
 const adminRoutes = require('../routes/adminRoutes');
 const clientRoutes = require('../routes/clientRoutes');
 const supervisorRoutes = require('../routes/supervisorRoutes');
@@ -244,7 +243,6 @@ app.get('/health/readiness', (req, res) => {
 // Rutas de API
 app.use('/api/auth', authRoutes);
 app.use('/api/visits', visitRoutes);
-app.use('/api/visits/images', visitImageRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/supervisor', supervisorRoutes);
@@ -259,7 +257,6 @@ app.get('/', (req, res) => {
     endpoints: {
       auth: '/api/auth',
       visits: '/api/visits',
-      visitsWithImages: '/api/visits/images',
       admin: '/api/admin',
       clients: '/api/clients',
       supervisor: '/api/supervisor',
