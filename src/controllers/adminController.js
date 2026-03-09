@@ -327,6 +327,54 @@ const getSystemStats = async (req, res, next) => {
 };
 
 /**
+ * Controlador para obtener dashboard de administrador
+ */
+const getDashboard = async (req, res) => {
+  try {
+    const totalUsers = await prisma.user.count();
+    const totalClients = await prisma.client.count();
+    const totalVisits = await prisma.visit.count();
+
+    const visitsToday = await prisma.visit.count({
+      where: {
+        createdAt: {
+          gte: new Date(new Date().setHours(0,0,0,0))
+        }
+      }
+    });
+
+    const recentVisits = await prisma.visit.findMany({
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      include: {
+        client: true,
+        promoter: true
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        stats: {
+          totalUsers,
+          totalClients,
+          totalVisits,
+          visitsToday
+        },
+        recentVisits
+      }
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Error obteniendo dashboard"
+    });
+  }
+};
+
+/**
  * Controlador para actualizar rol de usuario (solo admin)
  */
 const updateUserRole = async (req, res, next) => {
@@ -481,6 +529,7 @@ module.exports = {
   getAllClients,
   getAllVisits,
   getSystemStats,
+  getDashboard,
   updateUserRole,
   toggleUserStatus
 };

@@ -35,6 +35,13 @@ router.get('/visits', authenticateToken, requireAdmin, adminController.getAllVis
 router.get('/stats', authenticateToken, requireAdmin, adminController.getSystemStats);
 
 /**
+ * @route   GET /api/admin/dashboard
+ * @desc    Obtener dashboard de administrador con datos reales
+ * @access  Private (Admin/Super Admin)
+ */
+router.get('/dashboard', authenticateToken, requireAdmin, adminController.getDashboard);
+
+/**
  * @route   PATCH /api/admin/users/:userId/role
  * @desc    Actualizar rol de usuario (solo admin)
  * @access  Private (Admin/Super Admin)
