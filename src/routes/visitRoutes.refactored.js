@@ -1,22 +1,26 @@
 const router = require("express").Router();
 
-// Importar middleware
-const { authenticateToken } = require("../middleware/auth");
-const uploadVisitPhotos = require("../middleware/uploadVisitPhotos");
-
-// Importar controlador completo
-const visitController = require("../controllers/visitController.refactored");
+const upload = require("../middleware/uploadVisitPhotos");
+const authenticateToken = require("../middleware/auth");
+const { 
+  createVisit, 
+  getVisits, 
+  getVisitById, 
+  updateVisit, 
+  deleteVisit, 
+  getVisitStats 
+} = require("../controllers/visitController.refactored");
 
 /**
  * @route POST /api/visits
- * @desc Crear una nueva visita (con fotos)
+ * @desc Crear una nueva visita con fotos
  * @access Private (Autenticado)
  */
 router.post(
   "/",
   authenticateToken,
-  uploadVisitPhotos,
-  visitController.createVisit
+  upload.any(),
+  createVisit
 );
 
 /**
@@ -27,7 +31,7 @@ router.post(
 router.get(
   "/",
   authenticateToken,
-  visitController.getVisits
+  getVisits
 );
 
 /**
@@ -38,7 +42,7 @@ router.get(
 router.get(
   "/:id",
   authenticateToken,
-  visitController.getVisitById
+  getVisitById
 );
 
 /**
@@ -49,7 +53,7 @@ router.get(
 router.put(
   "/:id",
   authenticateToken,
-  visitController.updateVisit
+  updateVisit
 );
 
 /**
@@ -60,7 +64,7 @@ router.put(
 router.delete(
   "/:id",
   authenticateToken,
-  visitController.deleteVisit
+  deleteVisit
 );
 
 /**
@@ -71,7 +75,7 @@ router.delete(
 router.get(
   "/stats",
   authenticateToken,
-  visitController.getVisitStats
+  getVisitStats
 );
 
 module.exports = router;

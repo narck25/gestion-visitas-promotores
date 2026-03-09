@@ -1,20 +1,26 @@
 const prisma = require("../config/database");
 
-const createVisit = async (req, res) => {
-
+/**
+ * Controlador para crear una nueva visita
+ */
+exports.createVisit = async (req, res) => {
   try {
-
     const { clientId, notes, latitude, longitude } = req.body;
-
     const promoterId = req.user.id;
+
+    // Validación de campos requeridos
+    if (!clientId || !notes) {
+      return res.status(400).json({
+        success: false,
+        message: "clientId y notes son requeridos"
+      });
+    }
 
     const beforePhotos = [];
     const afterPhotos = [];
 
     if (req.files) {
-
       req.files.forEach(file => {
-
         if (file.fieldname === "beforePhotos") {
           beforePhotos.push("/uploads/visits/" + file.filename);
         }
@@ -22,27 +28,19 @@ const createVisit = async (req, res) => {
         if (file.fieldname === "afterPhotos") {
           afterPhotos.push("/uploads/visits/" + file.filename);
         }
-
       });
-
     }
 
     const visit = await prisma.visit.create({
-
       data: {
-
         promoterId,
         clientId,
-        notes,
-
+        notes: notes || null,
         latitude: latitude ? Number(latitude) : null,
         longitude: longitude ? Number(longitude) : null,
-
         beforePhotos,
         afterPhotos
-
       }
-
     });
 
     res.status(201).json({
@@ -51,24 +49,29 @@ const createVisit = async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error(error);
-
+    console.error("Error creando visita:", error);
+    
+    // Manejar errores específicos de Prisma
+    if (error.code === 'P2003') {
+      return res.status(400).json({
+        success: false,
+        message: "Cliente o promotor no encontrado"
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: "Error creando visita"
     });
-
   }
-
 };
 
 /**
  * Controlador para obtener visitas con filtros por rol de usuario
  */
-const getVisits = async (req, res, next) => {
+exports.getVisits = async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, startDate, endDate, promoterId: filterPromoterId } = req.query;
+    const { page = 1, limit = 10, promoterId: filterPromoterId } = req.query;
     const userId = req.user.id;
     const userRole = req.user.role;
 
@@ -122,21 +125,6 @@ const getVisits = async (req, res, next) => {
       where.promoterId = userId;
     }
 
-    // Filtros adicionales
-    if (status) {
-      where.status = status;
-    }
-
-    if (startDate || endDate) {
-      where.date = {};
-      if (startDate) {
-        where.date.gte = new Date(startDate);
-      }
-      if (endDate) {
-        where.date.lte = new Date(endDate);
-      }
-    }
-
     // Obtener visitas con paginación
     const [visits, total] = await Promise.all([
       prisma.visit.findMany({
@@ -144,7 +132,7 @@ const getVisits = async (req, res, next) => {
         skip,
         take,
         orderBy: {
-          date: 'desc'
+          createdAt: 'desc'
         },
         include: {
           client: {
@@ -181,14 +169,18 @@ const getVisits = async (req, res, next) => {
       }
     });
   } catch (error) {
-    next(error);
+    console.error("Error obteniendo visitas:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error obteniendo visitas"
+    });
   }
 };
 
 /**
  * Controlador para obtener una visita específica
  */
-const getVisitById = async (req, res, next) => {
+exports.getVisitById = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
@@ -259,19 +251,23 @@ const getVisitById = async (req, res, next) => {
       data: { visit }
     });
   } catch (error) {
-    next(error);
+    console.error("Error obteniendo visita:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error obteniendo visita"
+    });
   }
 };
 
 /**
- * Controlador para actualizar una visita
+ * Controlador para actualizar una visita (solo notas y coordenadas)
  */
-const updateVisit = async (req, res, next) => {
+exports.updateVisit = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
     const userRole = req.user.role;
-    const { notes, status, beforePhotos, afterPhotos, signature, latitude, longitude, address } = req.body;
+    const { notes, latitude, longitude } = req.body;
 
     // Validar coordenadas si se proporcionan
     if (latitude && (latitude < -90 || latitude > 90)) {
@@ -321,26 +317,19 @@ const updateVisit = async (req, res, next) => {
       });
     }
 
-    // Preparar datos para actualizar
-    const updateData = {
-      notes: notes || existingVisit.notes,
-      status: status || existingVisit.status,
-      beforePhotos: beforePhotos !== undefined ? beforePhotos : existingVisit.beforePhotos,
-      afterPhotos: afterPhotos !== undefined ? afterPhotos : existingVisit.afterPhotos,
-      signature: signature || existingVisit.signature
-    };
-
-    // Actualizar coordenadas si se proporcionan
+    // Preparar datos para actualizar (solo campos permitidos)
+    const updateData = {};
+    
+    if (notes !== undefined) {
+      updateData.notes = notes;
+    }
+    
     if (latitude !== undefined) {
       updateData.latitude = latitude ? parseFloat(latitude) : null;
     }
+    
     if (longitude !== undefined) {
       updateData.longitude = longitude ? parseFloat(longitude) : null;
-    }
-    
-    // Actualizar dirección si se proporciona
-    if (address !== undefined) {
-      updateData.address = address || null;
     }
 
     // Realizar la actualización
@@ -372,14 +361,18 @@ const updateVisit = async (req, res, next) => {
       data: { visit: updatedVisit }
     });
   } catch (error) {
-    next(error);
+    console.error("Error actualizando visita:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error actualizando visita"
+    });
   }
 };
 
 /**
  * Controlador para eliminar una visita
  */
-const deleteVisit = async (req, res, next) => {
+exports.deleteVisit = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
@@ -428,14 +421,18 @@ const deleteVisit = async (req, res, next) => {
       message: 'Visita eliminada exitosamente'
     });
   } catch (error) {
-    next(error);
+    console.error("Error eliminando visita:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error eliminando visita"
+    });
   }
 };
 
 /**
  * Controlador para obtener estadísticas de visitas
  */
-const getVisitStats = async (req, res, next) => {
+exports.getVisitStats = async (req, res) => {
   try {
     const userId = req.user.id;
     const userRole = req.user.role;
@@ -445,14 +442,10 @@ const getVisitStats = async (req, res, next) => {
     const where = {};
 
     // Filtrar por rol de usuario
-    // Si el usuario es PROMOTER o VIEWER, solo puede ver sus propias estadísticas
-    // Si el usuario es ADMIN o SUPER_ADMIN, puede ver estadísticas de cualquier promotor
-    // Si el usuario es SUPERVISOR, puede ver estadísticas de sus promotores
     if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
       where.promoterId = userId;
     } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
       // Los administradores pueden ver estadísticas de cualquier promotor
-      // Si se proporciona un promoterId específico, filtrar por ese promotor
       if (filterPromoterId) {
         where.promoterId = filterPromoterId;
       }
@@ -500,33 +493,26 @@ const getVisitStats = async (req, res, next) => {
     }
 
     if (Object.keys(dateFilter).length > 0) {
-      where.date = dateFilter;
+      where.createdAt = dateFilter;
     }
 
-    // Obtener estadísticas
-    const [totalVisits, visitsByStatus, visitsByDay] = await Promise.all([
+    // Obtener estadísticas básicas
+    const [totalVisits, visitsByDay] = await Promise.all([
       // Total de visitas
       prisma.visit.count({ where }),
       
-      // Visitas por estado
-      prisma.visit.groupBy({
-        by: ['status'],
-        where,
-        _count: true
-      }),
-      
       // Visitas por día (últimos 7 días)
       prisma.visit.groupBy({
-        by: ['date'],
+        by: ['createdAt'],
         where: {
           ...where,
-          date: {
+          createdAt: {
             gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
           }
         },
         _count: true,
         orderBy: {
-          date: 'asc'
+          createdAt: 'asc'
         }
       })
     ]);
@@ -534,12 +520,8 @@ const getVisitStats = async (req, res, next) => {
     // Formatear estadísticas
     const stats = {
       totalVisits,
-      visitsByStatus: visitsByStatus.reduce((acc, item) => {
-        acc[item.status] = item._count;
-        return acc;
-      }, {}),
       visitsByDay: visitsByDay.map(item => ({
-        date: item.date,
+        date: item.createdAt,
         count: item._count
       }))
     };
@@ -549,15 +531,10 @@ const getVisitStats = async (req, res, next) => {
       data: { stats }
     });
   } catch (error) {
-    next(error);
+    console.error("Error obteniendo estadísticas:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error obteniendo estadísticas"
+    });
   }
-};
-
-module.exports = {
-  createVisit,
-  getVisits,
-  getVisitById,
-  updateVisit,
-  deleteVisit,
-  getVisitStats
 };

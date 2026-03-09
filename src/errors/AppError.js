@@ -236,6 +236,10 @@ const errorHandler = (err, req, res, next) => {
  * Manejar errores específicos de Prisma
  */
 const handlePrismaError = (err) => {
+  // Mostrar el error real de Prisma en consola
+  console.error("PRISMA REAL ERROR:");
+  console.error(err);
+  
   // Error de validación de Prisma
   if (err.code === 'P2002') {
     return new ConflictError('Registro duplicado');
@@ -261,8 +265,20 @@ const handlePrismaError = (err) => {
     return new TimeoutError('Operación de base de datos', 5000);
   }
   
-  // Error genérico de base de datos
-  return new DatabaseError('Error de base de datos', err);
+  // Error genérico de base de datos - devolver el error real
+  const dbError = new DatabaseError(err.message || 'Error de base de datos', err);
+  // Sobrescribir el método toJSON para incluir todos los detalles del error
+  const originalToJSON = dbError.toJSON;
+  dbError.toJSON = function() {
+    const json = originalToJSON.call(this);
+    json.error.code = err.code || 'DATABASE_ERROR';
+    json.error.meta = err.meta || null;
+    json.error.prismaCode = err.code;
+    json.error.prismaMessage = err.message;
+    return json;
+  };
+  
+  return dbError;
 };
 
 /**

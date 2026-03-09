@@ -73,7 +73,11 @@ const limiter = rateLimitMiddleware.api;
 const app = express();
 
 // Middleware de seguridad
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+  })
+);
 
 // Configurar CORS dinámico y seguro
 const corsOptions = {
