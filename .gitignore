@@ -21,7 +21,8 @@ pnpm-lock.yaml
 .env.*.local
 
 # Uploads & User Generated Content
-uploads/
+uploads/*
+!uploads/.gitkeep
 temp/
 tmp/
 *.tmp

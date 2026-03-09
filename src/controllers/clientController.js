@@ -18,146 +18,43 @@ function errorResponse(res, message, status = 500) {
 }
 
 /**
- * Controlador para obtener todos los clientes con filtros por rol
+ * Controlador para obtener todos los clientes con paginación
  */
 const getAllClients = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, search = '', promoterId: filterPromoterId } = req.query;
-    const userId = req.user.id;
-    const userRole = req.user.role;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const take = parseInt(limit);
-
-    // Construir filtros base
-    const where = {};
-
-    // Filtrar por rol de usuario según las reglas de negocio
-    if (userRole === 'PROMOTER') {
-      // PROMOTER → solo clientes donde promoterId = user.id
-      where.promoterId = userId;
-    } else if (userRole === 'SUPERVISOR') {
-      // SUPERVISOR → clientes:
-      // a) donde promoter.supervisorId = user.id
-      // b) o clientes sin asignar (promoterId = null)
-      const promoterIds = await prisma.user.findMany({
-        where: { supervisorId: userId },
-        select: { id: true }
-      });
-      
-      const promoterIdList = promoterIds.map(p => p.id);
-      
-      where.OR = [
-        {
-          promoterId: {
-            in: promoterIdList
-          }
-        },
-        {
-          promoterId: null
-        }
-      ];
-      
-      // Si se proporciona un promoterId específico, verificar que pertenezca al supervisor
-      if (filterPromoterId) {
-        if (filterPromoterId === 'null') {
-          // Si se solicita ver clientes sin asignar
-          where.promoterId = null;
-          delete where.OR; // Eliminar el OR ya que ahora solo queremos null
-        } else {
-          const promoter = await prisma.user.findFirst({
-            where: { 
-              id: filterPromoterId,
-              supervisorId: userId 
-            }
-          });
-          
-          if (promoter) {
-            where.promoterId = filterPromoterId;
-            delete where.OR; // Eliminar el OR ya que ahora solo queremos este promotor específico
-          } else {
-            return errorResponse(res, 'No tienes permisos para ver clientes de este promotor', 403);
-          }
-        }
-      }
-    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
-      // ADMIN y SUPER_ADMIN → todos los clientes
-      // Si se proporciona un promoterId específico, filtrar por ese promotor
-      if (filterPromoterId) {
-        if (filterPromoterId === 'null') {
-          where.promoterId = null;
-        } else {
-          where.promoterId = filterPromoterId;
-        }
-      }
-    } else if (userRole === 'VIEWER') {
-      // VIEWER → solo clientes donde promoter.supervisorId = user.id
-      const promoterIds = await prisma.user.findMany({
-        where: { supervisorId: userId },
-        select: { id: true }
-      });
-      
-      where.promoterId = {
-        in: promoterIds.map(p => p.id)
-      };
-    } else {
-      // Para otros roles no definidos, por defecto solo sus clientes
-      where.promoterId = userId;
-    }
-
-    // Filtro de búsqueda
-    if (search) {
-      where.OR = where.OR || [];
-      where.OR.push(
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search, mode: 'insensitive' } },
-        { businessType: { contains: search, mode: 'insensitive' } }
-      );
-    }
-
-    // Obtener clientes con paginación
     const [clients, total] = await Promise.all([
       prisma.client.findMany({
-        where,
         skip,
-        take,
+        take: limit,
         orderBy: {
-          createdAt: 'desc'
-        },
-        include: {
-          promoter: {
-            select: {
-              id: true,
-              name: true,
-              email: true
-            }
-          },
-          _count: {
-            select: {
-              visits: true
-            }
-          }
+          createdAt: "desc"
         }
       }),
-      prisma.client.count({ where })
+      prisma.client.count()
     ]);
 
-    const totalPages = Math.ceil(total / take);
-
-    return successResponse(res, {
-      clients,
-      pagination: {
-        page: parseInt(page),
-        limit: take,
-        total,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1
+    res.json({
+      success: true,
+      data: {
+        clients,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit)
+        }
       }
     });
   } catch (error) {
-    next(error);
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Error obteniendo clientes"
+    });
   }
 };
 
@@ -234,90 +131,34 @@ const createClient = async (req, res, next) => {
 /**
  * Controlador para obtener un cliente específico
  */
-const getClientById = async (req, res, next) => {
+const getClientById = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.id;
-    const userRole = req.user.role;
 
-    // Obtener el cliente primero sin filtros de rol
     const client = await prisma.client.findUnique({
       where: { id },
       include: {
-        promoter: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            supervisorId: true
-          }
-        },
-        visits: {
-          take: 10,
-          orderBy: {
-            date: 'desc'
-          },
-          select: {
-            id: true,
-            date: true,
-            notes: true,
-            status: true
-          }
-        },
-        _count: {
-          select: {
-            visits: true
-          }
-        }
+        visits: true
       }
     });
 
     if (!client) {
       return res.status(404).json({
         success: false,
-        message: 'Cliente no encontrado'
+        message: "Cliente no encontrado"
       });
     }
 
-    // Validar acceso por rol
-    if (userRole === 'PROMOTER') {
-      // PROMOTER: Solo puede acceder si el cliente pertenece a él
-      if (client.promoterId !== userId) {
-        return res.status(403).json({
-          success: false,
-          message: 'No tienes permisos para acceder a este cliente'
-        });
-      }
-    } else if (userRole === 'SUPERVISOR') {
-      // SUPERVISOR: Solo puede acceder si el promoter.supervisorId = user.id
-      // o si el cliente no tiene promotor asignado
-      if (client.promoterId) {
-        // Si tiene promotor, verificar que el supervisor sea su supervisor
-        if (!client.promoter || client.promoter.supervisorId !== userId) {
-          return res.status(403).json({
-            success: false,
-            message: 'No tienes permisos para acceder a este cliente'
-          });
-        }
-      }
-      // Si no tiene promotor (promoterId = null), el supervisor puede acceder
-    } else if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
-      // ADMIN y SUPER_ADMIN: Pueden acceder siempre
-      // No se requiere validación adicional
-    } else {
-      // Para otros roles (incluyendo VIEWER), no permitir acceso
-      return res.status(403).json({
-        success: false,
-        message: 'No tienes permisos para acceder a este cliente'
-      });
-    }
-
-    res.status(200).json({
+    res.json({
       success: true,
-      data: { client }
+      data: client
     });
   } catch (error) {
-    next(error);
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Error obteniendo cliente"
+    });
   }
 };
 
@@ -420,50 +261,24 @@ const updateClient = async (req, res, next) => {
 /**
  * Controlador para eliminar un cliente
  */
-const deleteClient = async (req, res, next) => {
+const deleteClient = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.id;
-    const userRole = req.user.role;
 
-    // Construir filtro según el rol del usuario
-    const where = { id };
-
-    // Si el usuario es PROMOTER o VIEWER, solo puede eliminar sus propios clientes
-    // Si el usuario es ADMIN o SUPER_ADMIN, puede eliminar cualquier cliente
-    // Si el usuario es SUPERVISOR, puede eliminar clientes de sus promotores
-    if (userRole === 'PROMOTER' || userRole === 'VIEWER') {
-      where.promoterId = userId;
-    } else if (userRole === 'SUPERVISOR') {
-      // Los supervisores pueden eliminar clientes de sus promotores
-      const promoterIds = await prisma.user.findMany({
-        where: { supervisorId: userId },
-        select: { id: true }
-      });
-      
-      where.promoterId = {
-        in: promoterIds.map(p => p.id)
-      };
-    }
-    // Para ADMIN y SUPER_ADMIN no se agrega filtro de promoterId
-
-    // Verificar que el cliente existe y el usuario tiene permisos
-    const existingClient = await prisma.client.findFirst({
-      where
-    });
-
-    if (!existingClient) {
-      return errorResponse(res, 'Cliente no encontrado', 404);
-    }
-
-    // Eliminar cliente (las visitas se eliminarán en cascada)
     await prisma.client.delete({
       where: { id }
     });
 
-    return successResponse(res, { message: 'Cliente eliminado exitosamente' });
+    res.json({
+      success: true,
+      message: "Cliente eliminado"
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Error eliminando cliente"
+    });
   }
 };
 
@@ -668,6 +483,26 @@ const assignClientToPromoter = async (req, res, next) => {
   }
 };
 
+/**
+ * Controlador para exportar clientes
+ */
+const exportClients = async (req, res) => {
+  try {
+    const clients = await prisma.client.findMany();
+
+    res.json({
+      success: true,
+      data: clients
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Error exportando clientes"
+    });
+  }
+};
+
 module.exports = {
   getAllClients,
   createClient,
@@ -675,5 +510,6 @@ module.exports = {
   updateClient,
   deleteClient,
   getClientStats,
-  assignClientToPromoter
+  assignClientToPromoter,
+  exportClients
 };

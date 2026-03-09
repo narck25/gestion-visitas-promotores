@@ -56,6 +56,16 @@ router.get('/stats',
 );
 
 /**
+ * @route   GET /api/clients/export
+ * @desc    Exportar todos los clientes
+ * @access  Private (Todos los roles autenticados)
+ */
+router.get('/export', 
+  authenticateToken, 
+  clientController.exportClients
+);
+
+/**
  * @route   POST /api/clients
  * @desc    Crear un nuevo cliente
  * @access  Private (PROMOTER, SUPERVISOR, ADMIN, SUPER_ADMIN)
@@ -92,11 +102,10 @@ router.put('/:id',
 /**
  * @route   DELETE /api/clients/:id
  * @desc    Eliminar un cliente
- * @access  Private (PROMOTER, SUPERVISOR, ADMIN, SUPER_ADMIN)
+ * @access  Private (Todos los roles autenticados)
  */
 router.delete('/:id', 
   authenticateToken, 
-  authorizeRoles('PROMOTER', 'SUPERVISOR', 'ADMIN', 'SUPER_ADMIN'), 
   clientController.deleteClient
 );
 

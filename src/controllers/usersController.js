@@ -522,11 +522,41 @@ const deleteUser = async (req, res, next) => {
   }
 };
 
+/**
+ * Controlador para obtener todos los promotores
+ */
+const getPromoters = async (req, res) => {
+  try {
+    const promoters = await prisma.user.findMany({
+      where: {
+        role: "PROMOTER"
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true
+      }
+    });
+
+    res.json({
+      success: true,
+      data: promoters
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Error cargando promotores"
+    });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
   createUser,
   updateUser,
   updateUserStatus,
-  deleteUser
+  deleteUser,
+  getPromoters
 };

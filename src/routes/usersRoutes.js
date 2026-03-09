@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const usersController = require('../controllers/usersController');
+const userController = require('../controllers/userController');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
 // Middleware para verificar que el usuario es ADMIN o SUPER_ADMIN
@@ -47,5 +48,12 @@ router.patch('/:id/status', authenticateToken, requireAdmin, usersController.upd
  * @access  Private (Admin/Super Admin)
  */
 router.delete('/:id', authenticateToken, requireAdmin, usersController.deleteUser);
+
+/**
+ * @route   GET /api/users/promoters
+ * @desc    Obtener todos los promotores
+ * @access  Private
+ */
+router.get('/promoters', authenticateToken, userController.getPromoters);
 
 module.exports = router;
