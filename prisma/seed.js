@@ -137,6 +137,12 @@ async function main() {
     await prisma.refreshToken.deleteMany();
     console.log('  ✓ RefreshTokens eliminados');
     
+    await prisma.orderItem.deleteMany();
+    console.log('  ✓ OrderItems eliminados');
+    
+    await prisma.order.deleteMany();
+    console.log('  ✓ Orders eliminados');
+    
     await prisma.visit.deleteMany();
     console.log('  ✓ Visitas eliminadas');
     
@@ -311,16 +317,61 @@ async function main() {
       }
     }
     
-    // 5. Resumen final
+    // 5. Crear pedidos de prueba usando productos existentes
+    console.log('📦 Creando pedidos de prueba...');
+    
+    // Obtener productos existentes
+    const products = await prisma.product.findMany({
+      take: 20
+    });
+    
+    let orderCount = 1;
+    
+    for (const promoter of promoters) {
+      const numberOfOrders = 2 + Math.floor(Math.random() * 3); // 2-4 pedidos por promotor
+      
+      for (let i = 0; i < numberOfOrders; i++) {
+        const status = Math.random() > 0.5 ? 'PENDING' : 'CAPTURED';
+        
+        const randomProducts = products
+          .sort(() => 0.5 - Math.random())
+          .slice(0, 3 + Math.floor(Math.random() * 3)); // 3-5 productos por pedido
+        
+        const order = await prisma.order.create({
+          data: {
+            userId: promoter.id,
+            status: status,
+            intelisisFolio: status === 'CAPTURED'
+              ? `INT-${1000 + orderCount}`
+              : null,
+            items: {
+              create: randomProducts.map(product => ({
+                productId: product.id,
+                quantity: 1 + Math.floor(Math.random() * 20) // 1-20 unidades
+              }))
+            }
+          }
+        });
+        
+        console.log(`  ✓ Pedido ${orderCount} creado (${status}) - Promotor: ${promoter.name}`);
+        orderCount++;
+      }
+    }
+    
+    console.log(`📦 ${orderCount - 1} pedidos creados`);
+    
+    // 6. Resumen final
     console.log('\n✅ Seed completado exitosamente!');
     console.log('📊 Resumen de datos creados:');
     console.log(`   👤 Usuarios: 1 SUPER_ADMIN, 1 ADMIN, 2 SUPERVISOR, 4 PROMOTER`);
     console.log(`   🏢 Clientes: ${clients.length} (5 por cada promotor)`);
     console.log(`   📋 Visitas: ${visitCount - 1} (3-6 por cada cliente)`);
+    console.log(`   📦 Pedidos: ${orderCount - 1} (2-4 por cada promotor)`);
     console.log('\n🔑 Credenciales para login:');
     console.log('   Email: cualquier usuario creado (ej: promotor1@empresa.com)');
     console.log('   Password: 123456');
     console.log('\n💡 Puedes iniciar sesión con cualquier promotor y ver sus visitas en "Mis visitas"');
+    console.log('💡 Los pedidos de prueba están disponibles en el módulo de pedidos');
     
   } catch (error) {
     console.error('❌ Error durante el seed:', error);

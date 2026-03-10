@@ -27,7 +27,7 @@ const getAllUsers = async (req, res, next) => {
       ];
     }
 
-    if (role && ['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'VIEWER'].includes(role)) {
+    if (role && ['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'CAPTURISTA', 'VIEWER'].includes(role)) {
       where.role = role;
     }
 
@@ -386,7 +386,7 @@ const updateUserRole = async (req, res, next) => {
     const { role } = req.body;
 
     // Validar rol
-    if (!['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'VIEWER'].includes(role)) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'CAPTURISTA', 'VIEWER'].includes(role)) {
       return res.status(400).json({
         success: false,
         message: 'Rol inválido'

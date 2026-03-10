@@ -21,7 +21,7 @@ Este schema está diseñado para una aplicación de gestión de visitas de promo
 - `name` (String): Nombre completo (255 chars)
 - `phone` (String, opcional): Teléfono (20 chars)
 - `avatar` (String, opcional): URL de imagen de perfil (500 chars)
-- `role` (Role): Rol del usuario (SUPER_ADMIN, ADMIN, MANAGER, PROMOTER, VIEWER)
+- `role` (Role): Rol del usuario (SUPER_ADMIN, ADMIN, MANAGER, PROMOTER, CAPTURISTA, VIEWER)
 - `isActive` (Boolean): Estado activo/inactivo
 - `lastLoginAt` (DateTime, opcional): Último login
 - `createdAt` (DateTime): Fecha de creación
@@ -172,6 +172,7 @@ SUPER_ADMIN   // Acceso total al sistema
 ADMIN         // Administración completa
 MANAGER       // Gestión de promotores y reportes
 PROMOTER      // Promotor de ventas (usuario principal)
+CAPTURISTA    // Capturista de pedidos
 VIEWER        // Solo lectura (para supervisores)
 ```
 

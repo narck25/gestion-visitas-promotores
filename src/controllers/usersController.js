@@ -26,7 +26,7 @@ const getAllUsers = async (req, res, next) => {
       ];
     }
 
-    if (role && ['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'VIEWER'].includes(role)) {
+    if (role && ['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'CAPTURISTA', 'VIEWER'].includes(role)) {
       where.role = role;
     }
 
@@ -180,7 +180,7 @@ const createUser = async (req, res, next) => {
     }
 
     // Validar rol
-    if (!['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'VIEWER'].includes(role)) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'CAPTURISTA', 'VIEWER'].includes(role)) {
       return res.status(400).json({
         success: false,
         error: 'Rol inválido'
@@ -281,7 +281,7 @@ const updateUser = async (req, res, next) => {
     }
 
     // Validar rol si se está cambiando
-    if (role && !['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'VIEWER'].includes(role)) {
+    if (role && !['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'PROMOTER', 'CAPTURISTA', 'VIEWER'].includes(role)) {
       return res.status(400).json({
         success: false,
         error: 'Rol inválido'

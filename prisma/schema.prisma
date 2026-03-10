@@ -25,6 +25,7 @@ model User {
   supervisor    User?          @relation("SupervisorPromoters", fields: [supervisorId], references: [id])
   promoters     User[]         @relation("SupervisorPromoters")
   visits        Visit[]
+  orders        Order[]
 
   @@index([role])
   @@index([isActive])
@@ -116,6 +117,7 @@ enum Role {
   ADMIN
   SUPERVISOR
   PROMOTER
+  CAPTURISTA
   VIEWER
 }
 
@@ -143,4 +145,56 @@ enum VisitStatus {
   COMPLETED
   CANCELLED
   NO_SHOW
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  userId         String
+  user           User        @relation(fields: [userId], references: [id])
+  status         OrderStatus @default(PENDING)
+  intelisisFolio String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  items          OrderItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Product {
+  id           String      @id @default(uuid())
+  sku          String      @unique
+  description  String
+  family       String?
+  line         String?
+  manufacturer String?
+  listPrice    Float?
+  currency     String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  orderItems   OrderItem[]
+
+  @@index([sku])
+  @@index([description])
+  @@index([family])
+  @@index([line])
+  @@index([manufacturer])
+}
+
+enum OrderStatus {
+  PENDING
+  CAPTURED
 }
