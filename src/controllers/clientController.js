@@ -18,23 +18,59 @@ function errorResponse(res, message, status = 500) {
 }
 
 /**
- * Controlador para obtener todos los clientes con paginación
+ * Controlador para obtener todos los clientes con paginación y filtros por rol
  */
 const getAllClients = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
+    const user = req.user;
+
+    // Construir condiciones de filtro según el rol del usuario
+    const where = {};
+
+    if (user.role === 'PROMOTER') {
+      // PROMOTER: solo sus clientes
+      where.promoterId = user.id;
+    } else if (user.role === 'SUPERVISOR') {
+      // SUPERVISOR: clientes de sus promotores
+      const supervisedPromoters = await prisma.user.findMany({
+        where: {
+          supervisorId: user.id,
+          role: 'PROMOTER'
+        },
+        select: { id: true }
+      });
+      const promoterIds = supervisedPromoters.map(p => p.id);
+      where.promoterId = { in: promoterIds };
+    }
+    // CAPTURISTA, ADMIN, SUPER_ADMIN: todos los clientes (sin filtro adicional)
+    // VIEWER: también todos los clientes según los requisitos
 
     const [clients, total] = await Promise.all([
       prisma.client.findMany({
+        where,
         skip,
         take: limit,
         orderBy: {
           createdAt: "desc"
+        },
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          promoterId: true,
+          phone: true,
+          email: true,
+          businessName: true,
+          businessType: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true
         }
       }),
-      prisma.client.count()
+      prisma.client.count({ where })
     ]);
 
     res.json({
@@ -503,6 +539,41 @@ const exportClients = async (req, res) => {
   }
 };
 
+/**
+ * Controlador para asignar un promotor a un cliente (versión simple)
+ * PATCH /api/clients/:id/assign
+ */
+exports.assignPromoter = async (req, res) => {
+  try {
+    const clientId = req.params.id;
+    const { promoterId } = req.body;
+
+    if (!promoterId) {
+      return res.status(400).json({
+        success: false,
+        message: "promoterId es requerido"
+      });
+    }
+
+    const updatedClient = await prisma.client.update({
+      where: { id: clientId },
+      data: { promoterId }
+    });
+
+    res.json({
+      success: true,
+      data: updatedClient
+    });
+  } catch (error) {
+    console.error("Error assigning promoter:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Error al asignar promotor"
+    });
+  }
+};
+
 module.exports = {
   getAllClients,
   createClient,
@@ -511,5 +582,6 @@ module.exports = {
   deleteClient,
   getClientStats,
   assignClientToPromoter,
-  exportClients
+  exportClients,
+  assignPromoter: exports.assignPromoter
 };

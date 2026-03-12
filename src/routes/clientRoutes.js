@@ -109,4 +109,15 @@ router.delete('/:id',
   clientController.deleteClient
 );
 
+/**
+ * @route   PATCH /api/clients/:id/assign
+ * @desc    Asignar un promotor a un cliente
+ * @access  Private (Todos los roles autenticados)
+ */
+router.patch(
+  '/:id/assign',
+  authenticateToken,
+  clientController.assignPromoter
+);
+
 module.exports = router;

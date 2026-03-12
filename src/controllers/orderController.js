@@ -3,6 +3,56 @@ const prisma = new PrismaClient();
 const { AuthorizationError, validateResourceOwnership } = require('../middleware/permissions');
 
 /**
+ * Función auxiliar para validar acceso a un pedido según rol
+ */
+async function validateOrderAccess(user, order) {
+  if (!user) {
+    throw new AuthorizationError('Usuario no autenticado', 401);
+  }
+
+  // ADMIN, CAPTURISTA, SUPER_ADMIN tienen acceso a todo
+  if (['ADMIN', 'CAPTURISTA', 'SUPER_ADMIN'].includes(user.role)) {
+    return true;
+  }
+
+  // PROMOTER: solo sus propios pedidos
+  if (user.role === 'PROMOTER') {
+    if (order.userId !== user.id) {
+      throw new AuthorizationError('No tienes permisos para acceder a este pedido', 403);
+    }
+    return true;
+  }
+
+  // SUPERVISOR: pedidos de sus promotores
+  if (user.role === 'SUPERVISOR') {
+    const promoter = await prisma.user.findUnique({
+      where: { id: order.userId },
+      select: { supervisorId: true }
+    });
+
+    if (!promoter || promoter.supervisorId !== user.id) {
+      throw new AuthorizationError('No tienes permisos para acceder a este pedido', 403);
+    }
+    return true;
+  }
+
+  // VIEWER: solo lectura de pedidos de sus promotores
+  if (user.role === 'VIEWER') {
+    const promoter = await prisma.user.findUnique({
+      where: { id: order.userId },
+      select: { supervisorId: true }
+    });
+
+    if (!promoter || promoter.supervisorId !== user.id) {
+      throw new AuthorizationError('No tienes permisos para acceder a este pedido', 403);
+    }
+    return true;
+  }
+
+  throw new AuthorizationError('No tienes permisos para acceder a este pedido', 403);
+}
+
+/**
  * Controlador para gestión de pedidos
  */
 class OrderController {
@@ -16,22 +66,23 @@ class OrderController {
       const userId = req.user.id;
 
       // Validar que haya items
-      if (!items || !Array.isArray(items) || items.length === 0) {
+      if (!items || items.length === 0) {
         return res.status(400).json({
-          error: 'El pedido debe contener al menos un producto'
+          message: 'El pedido debe tener al menos un producto'
         });
       }
 
       // Validar estructura de items
       for (const item of items) {
-        if (!item.productId || !item.quantity) {
+        if (!item.productId) {
           return res.status(400).json({
-            error: 'Cada item debe tener productId y quantity'
+            message: 'Cada item debe tener productId'
           });
         }
-        if (typeof item.quantity !== 'number' || item.quantity <= 0) {
+
+        if (!item.quantity || item.quantity <= 0) {
           return res.status(400).json({
-            error: 'La cantidad debe ser un número positivo'
+            message: 'La cantidad debe ser mayor a 0'
           });
         }
       }
@@ -53,7 +104,7 @@ class OrderController {
         const foundIds = products.map(p => p.id);
         const missingIds = productIds.filter(id => !foundIds.includes(id));
         return res.status(404).json({
-          error: 'Algunos productos no existen',
+          message: 'Algunos productos no existen',
           missingProductIds: missingIds
         });
       }
@@ -122,7 +173,7 @@ class OrderController {
       const where = {};
 
       // Filtrar por estado si se especifica
-      if (status && ['PENDING', 'CAPTURED'].includes(status)) {
+      if (status && ['PENDING', 'CAPTURED', 'CANCELLED'].includes(status)) {
         where.status = status;
       }
 
@@ -166,7 +217,8 @@ class OrderController {
                 product: {
                   select: {
                     sku: true,
-                    description: true
+                    description: true,
+                    listPrice: true
                   }
                 }
               }
@@ -176,8 +228,35 @@ class OrderController {
         prisma.order.count({ where })
       ]);
 
+      // Formatear órdenes para el frontend
+      const formattedOrders = orders.map(order => ({
+        id: order.id,
+        client: {
+          id: order.user?.id || '0',
+          name: order.user?.name || 'Usuario desconocido'
+        },
+        createdBy: order.user?.name || 'Usuario',
+        status: order.status,
+        createdAt: order.createdAt,
+        total: order.items.reduce(
+          (sum, item) => sum + Number(item.quantity * (item.product?.listPrice || 0)),
+          0
+        ),
+        itemsCount: order.items.length,
+        items: order.items.map(item => ({
+          id: item.id,
+          product: {
+            sku: item.product?.sku,
+            description: item.product?.description,
+            price: item.product?.listPrice || 0
+          },
+          quantity: item.quantity,
+          subtotal: item.quantity * (item.product?.listPrice || 0)
+        }))
+      }));
+
       res.json({
-        orders,
+        orders: formattedOrders,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -234,38 +313,68 @@ class OrderController {
         });
       }
 
-      // Validar permisos para ver este pedido
-      try {
-        await this.validateOrderAccess(user, order);
-      } catch (authError) {
-        return res.status(authError.statusCode || 403).json({
-          error: authError.message
-        });
+      // Validar permisos para ver este pedido (versión simplificada)
+      if (!user) {
+        return res.status(401).json({ error: 'Usuario no autenticado' });
       }
 
-      // Formatear respuesta con información detallada
+      // ADMIN, CAPTURISTA, SUPER_ADMIN tienen acceso a todo
+      if (['ADMIN', 'CAPTURISTA', 'SUPER_ADMIN'].includes(user.role)) {
+        // Acceso permitido
+      } else if (user.role === 'PROMOTER') {
+        // PROMOTER: solo sus propios pedidos
+        if (order.userId !== user.id) {
+          return res.status(403).json({ error: 'No tienes permisos para acceder a este pedido' });
+        }
+      } else if (user.role === 'SUPERVISOR') {
+        // SUPERVISOR: pedidos de sus promotores
+        const promoter = await prisma.user.findUnique({
+          where: { id: order.userId },
+          select: { supervisorId: true }
+        });
+
+        if (!promoter || promoter.supervisorId !== user.id) {
+          return res.status(403).json({ error: 'No tienes permisos para acceder a este pedido' });
+        }
+      } else if (user.role === 'VIEWER') {
+        // VIEWER: solo lectura de pedidos de sus promotores
+        const promoter = await prisma.user.findUnique({
+          where: { id: order.userId },
+          select: { supervisorId: true }
+        });
+
+        if (!promoter || promoter.supervisorId !== user.id) {
+          return res.status(403).json({ error: 'No tienes permisos para acceder a este pedido' });
+        }
+      } else {
+        return res.status(403).json({ error: 'No tienes permisos para acceder a este pedido' });
+      }
+
+      // Formatear respuesta con información detallada para el frontend
       const formattedOrder = {
         id: order.id,
-        userId: order.userId,
-        userName: order.user.name,
-        userEmail: order.user.email,
+        client: {
+          id: order.user?.id || '0',
+          name: order.user?.name || 'Usuario desconocido'
+        },
+        createdBy: order.user?.name || 'Usuario',
         status: order.status,
         intelisisFolio: order.intelisisFolio,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
-        items: order.items.map(item => ({
-          id: item.id,
-          productId: item.productId,
-          sku: item.product.sku,
-          description: item.product.description,
-          quantity: item.quantity,
-          listPrice: item.product.listPrice,
-          currency: item.product.currency,
-          subtotal: item.product.listPrice ? item.product.listPrice * item.quantity : null
-        })),
         total: order.items.reduce((sum, item) => {
           return sum + (item.product.listPrice ? item.product.listPrice * item.quantity : 0);
-        }, 0)
+        }, 0),
+        items: order.items.map(item => ({
+          id: item.id,
+          product: {
+            sku: item.product?.sku,
+            description: item.product?.description,
+            price: item.product?.listPrice || 0
+          },
+          quantity: item.quantity,
+          subtotal: item.quantity * (item.product?.listPrice || 0)
+        }))
       };
 
       res.json(formattedOrder);
@@ -351,6 +460,70 @@ class OrderController {
   }
 
   /**
+   * Cancelar pedido (marcar como CANCELLED)
+   * PATCH /api/orders/:id/cancel
+   */
+  async cancelOrder(req, res) {
+    try {
+      const { id } = req.params;
+      const user = req.user;
+
+      // Validar que solo ADMIN, CAPTURISTA o SUPER_ADMIN puedan cancelar pedidos
+      const allowedRoles = ['ADMIN', 'CAPTURISTA', 'SUPER_ADMIN'];
+      if (!allowedRoles.includes(user.role)) {
+        return res.status(403).json({
+          error: 'No tienes permisos para cancelar pedidos'
+        });
+      }
+
+      // Verificar que el pedido exista
+      const order = await prisma.order.findUnique({
+        where: { id }
+      });
+
+      if (!order) {
+        return res.status(404).json({
+          error: 'Pedido no encontrado'
+        });
+      }
+
+      // Verificar que el pedido esté en estado PENDING
+      if (order.status !== 'PENDING') {
+        return res.status(400).json({
+          error: `Solo se pueden cancelar pedidos en estado PENDING. El pedido actual está en estado ${order.status}`
+        });
+      }
+
+      // Actualizar pedido
+      const updatedOrder = await prisma.order.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED'
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      res.json({
+        success: true,
+        message: 'Pedido cancelado exitosamente',
+        order: updatedOrder
+      });
+    } catch (error) {
+      console.error('Error al cancelar pedido:', error);
+      res.status(500).json({
+        error: 'Error interno del servidor al cancelar pedido'
+      });
+    }
+  }
+
+  /**
    * Validar acceso a un pedido según rol
    * @private
    */
@@ -400,6 +573,7 @@ class OrderController {
 
     throw new AuthorizationError('No tienes permisos para acceder a este pedido', 403);
   }
+
 }
 
 module.exports = new OrderController();

@@ -197,4 +197,5 @@ model Product {
 enum OrderStatus {
   PENDING
   CAPTURED
+  CANCELLED
 }

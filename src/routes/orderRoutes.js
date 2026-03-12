@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/orderController');
 const { requireRoles } = require('../middleware/permissions');
+const { authenticateToken } = require('../middleware/auth');
 
 /**
  * @route   POST /api/orders
@@ -9,6 +10,7 @@ const { requireRoles } = require('../middleware/permissions');
  * @access  Private (PROMOTER, SUPERVISOR, ADMIN, SUPER_ADMIN)
  */
 router.post('/', 
+  authenticateToken,
   (req, res, next) => {
     try {
       requireRoles(req.user, ['PROMOTER', 'SUPERVISOR', 'ADMIN', 'SUPER_ADMIN']);
@@ -28,14 +30,7 @@ router.post('/',
  * @access  Private (todos los roles autenticados)
  */
 router.get('/', 
-  (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        error: 'Usuario no autenticado'
-      });
-    }
-    next();
-  },
+  authenticateToken,
   orderController.listOrders
 );
 
@@ -45,14 +40,7 @@ router.get('/',
  * @access  Private (según permisos)
  */
 router.get('/:id', 
-  (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        error: 'Usuario no autenticado'
-      });
-    }
-    next();
-  },
+  authenticateToken,
   orderController.getOrderDetail
 );
 
@@ -62,6 +50,7 @@ router.get('/:id',
  * @access  Private (ADMIN, CAPTURISTA, SUPER_ADMIN)
  */
 router.patch('/:id/complete', 
+  authenticateToken,
   (req, res, next) => {
     try {
       requireRoles(req.user, ['ADMIN', 'CAPTURISTA', 'SUPER_ADMIN']);
@@ -73,6 +62,26 @@ router.patch('/:id/complete',
     }
   },
   orderController.completeOrder
+);
+
+/**
+ * @route   PATCH /api/orders/:id/cancel
+ * @desc    Cancelar pedido (marcar como CANCELLED)
+ * @access  Private (ADMIN, CAPTURISTA, SUPER_ADMIN)
+ */
+router.patch('/:id/cancel', 
+  authenticateToken,
+  (req, res, next) => {
+    try {
+      requireRoles(req.user, ['ADMIN', 'CAPTURISTA', 'SUPER_ADMIN']);
+      next();
+    } catch (error) {
+      return res.status(error.statusCode || 403).json({
+        error: error.message
+      });
+    }
+  },
+  orderController.cancelOrder
 );
 
 module.exports = router;
