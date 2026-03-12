@@ -15,6 +15,13 @@ const requireAdmin = authorizeRoles('ADMIN', 'SUPER_ADMIN');
 router.get('/', authenticateToken, requireAdmin, usersController.getAllUsers);
 
 /**
+ * @route   GET /api/users/promoters
+ * @desc    Obtener todos los promotores
+ * @access  Private
+ */
+router.get('/promoters', authenticateToken, userController.getPromoters);
+
+/**
  * @route   GET /api/users/:id
  * @desc    Obtener un usuario por ID (solo admin)
  * @access  Private (Admin/Super Admin)
@@ -48,12 +55,5 @@ router.patch('/:id/status', authenticateToken, requireAdmin, usersController.upd
  * @access  Private (Admin/Super Admin)
  */
 router.delete('/:id', authenticateToken, requireAdmin, usersController.deleteUser);
-
-/**
- * @route   GET /api/users/promoters
- * @desc    Obtener todos los promotores
- * @access  Private
- */
-router.get('/promoters', authenticateToken, userController.getPromoters);
 
 module.exports = router;
