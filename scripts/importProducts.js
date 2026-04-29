@@ -19,7 +19,9 @@ async function run() {
         line: row.Linea,
         manufacturer: row.Fabricante,
         listPrice: parseFloat(row.Precio_Lista),
-        currency: row.Moneda
+        currency: row.Moneda,
+        porcentajeIVA: parseFloat(row.Porcentaje_IVA || 0),
+        porcentajeIEPS: parseFloat(row.Porcentaje_IEPS || 0)
       })
 
     })

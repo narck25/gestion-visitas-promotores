@@ -34,7 +34,9 @@ exports.searchProducts = async (req, res) => {
         line: true,
         manufacturer: true,
         listPrice: true,
-        currency: true
+        currency: true,
+        porcentajeIVA: true,
+        porcentajeIEPS: true
       }
     });
 
@@ -65,6 +67,8 @@ exports.getProductById = async (req, res) => {
         manufacturer: true,
         listPrice: true,
         currency: true,
+        porcentajeIVA: true,
+        porcentajeIEPS: true,
         createdAt: true,
         updatedAt: true
       }
@@ -119,7 +123,9 @@ exports.getAllProducts = async (req, res) => {
           line: true,
           manufacturer: true,
           listPrice: true,
-          currency: true
+          currency: true,
+          porcentajeIVA: true,
+          porcentajeIEPS: true
         }
       }),
       prisma.product.count({ where })

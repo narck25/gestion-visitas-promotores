@@ -21,11 +21,11 @@ model User {
   supervisorId  String?
   lastLoginAt   DateTime?
   clients       Client[]
+  orders        Order[]
   refreshTokens RefreshToken[]
   supervisor    User?          @relation("SupervisorPromoters", fields: [supervisorId], references: [id])
   promoters     User[]         @relation("SupervisorPromoters")
   visits        Visit[]
-  orders        Order[]
 
   @@index([role])
   @@index([isActive])
@@ -112,13 +112,62 @@ model RefreshToken {
   @@index([userId])
 }
 
+model Order {
+  id             String      @id @default(uuid())
+  userId         String
+  status         OrderStatus @default(PENDING)
+  intelisisFolio String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  user           User        @relation(fields: [userId], references: [id])
+  items          OrderItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int
+  order     Order   @relation(fields: [orderId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Product {
+  id             String      @id @default(uuid())
+  sku            String      @unique
+  description    String
+  family         String?
+  line           String?
+  manufacturer   String?
+  listPrice      Float?
+  currency       String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  porcentajeIEPS Float?      @default(0)
+  porcentajeIVA  Float?      @default(0)
+  orderItems     OrderItem[]
+
+  @@index([sku])
+  @@index([description])
+  @@index([family])
+  @@index([line])
+  @@index([manufacturer])
+}
+
 enum Role {
   SUPER_ADMIN
   ADMIN
   SUPERVISOR
   PROMOTER
-  CAPTURISTA
   VIEWER
+  CAPTURISTA
 }
 
 enum BusinessType {
@@ -145,53 +194,6 @@ enum VisitStatus {
   COMPLETED
   CANCELLED
   NO_SHOW
-}
-
-model Order {
-  id             String      @id @default(uuid())
-  userId         String
-  user           User        @relation(fields: [userId], references: [id])
-  status         OrderStatus @default(PENDING)
-  intelisisFolio String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  items          OrderItem[]
-
-  @@index([userId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-model OrderItem {
-  id        String   @id @default(uuid())
-  orderId   String
-  order     Order    @relation(fields: [orderId], references: [id])
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  quantity  Int
-
-  @@index([orderId])
-  @@index([productId])
-}
-
-model Product {
-  id           String      @id @default(uuid())
-  sku          String      @unique
-  description  String
-  family       String?
-  line         String?
-  manufacturer String?
-  listPrice    Float?
-  currency     String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  orderItems   OrderItem[]
-
-  @@index([sku])
-  @@index([description])
-  @@index([family])
-  @@index([line])
-  @@index([manufacturer])
 }
 
 enum OrderStatus {
