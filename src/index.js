@@ -216,7 +216,7 @@ const startServer = async () => {
 
     // 4. Iniciar servidor HTTP (siempre se inicia, incluso sin DB)
     server = app.listen(PORT, '0.0.0.0', () => {
-      const corsOrigins = process.env.CORS_ALLOWED_ORIGINS || 'https://app.prodevfabian.cloud,https://api.prodevfabian.cloud';
+      const corsOrigins = process.env.CORS_ALLOWED_ORIGINS || 'https://kramforce.kramhub.site,https://apiforce.kramhub.site';
       const environment = process.env.NODE_ENV || 'production';
       
       // 5. Verificar estado de storage después de iniciar
