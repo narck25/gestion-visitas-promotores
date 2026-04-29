@@ -94,8 +94,8 @@ const corsOptions = {
     const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS 
       ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
       : [
-          'https://app.prodevfabian.cloud',
-          'https://api.prodevfabian.cloud',
+          'https://kramforce.kramhub.site',
+          'https://apiforce.kramhub.site',
           'http://localhost:3000' // Para desarrollo local
         ];
     
